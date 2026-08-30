@@ -480,7 +480,7 @@ $GenerateScript = {
                 return [math]::Round((($values | Measure-Object -Average).Average), 2)
             }
 
-            $averageRecord = [PSCustomObject]@{
+            $groupRecord = [PSCustomObject]@{
                 timestamp       = (Get-Date).ToString("s")
                 build           = $runRecords[0].build
                 model           = $runRecords[0].model
@@ -496,15 +496,16 @@ $GenerateScript = {
                 promptTps       = & $average "promptTps"
                 promptTokens    = & $average "promptTokens"
                 acceptancePct   = & $average "acceptancePct"
-                ttftSec          = & $average "ttftSec"
-                elapsedSec       = & $average "elapsedSec"
-                peakPowerW       = & $average "peakPowerW"
-                peakTempC        = & $average "peakTempC"
-                vramUsedGB       = & $average "vramUsedGB"
+                ttftSec         = & $average "ttftSec"
+                elapsedSec      = & $average "elapsedSec"
+                peakPowerW      = & $average "peakPowerW"
+                peakTempC       = & $average "peakTempC"
+                vramUsedGB      = & $average "vramUsedGB"
                 prompt          = $runRecords[0].prompt
                 repeatRuns      = $runRecords.Count
                 runIndex        = 1
                 totalRuns       = $runRecords.Count
+                runs            = @($runRecords)
             }
 
             $history = @()
@@ -516,7 +517,7 @@ $GenerateScript = {
                 }
             }
 
-            $history += $averageRecord
+            $history += $groupRecord
             $historyJson = ConvertTo-Json -InputObject ([object[]]$history) -Depth 50
             $resultsDirectory = Split-Path -Parent -Path $ResultsPath
             if ($resultsDirectory -and -not (Test-Path -LiteralPath $resultsDirectory)) {

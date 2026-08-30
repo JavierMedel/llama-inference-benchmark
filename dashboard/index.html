@@ -367,6 +367,43 @@
   table.history tbody tr:hover td {
     background: transparent;
   }
+  table.history th.history-toggle-col,
+  table.history td.history-toggle-col,
+  table.history td.history-run-label {
+    width: 28px;
+    min-width: 28px;
+    max-width: 28px;
+    text-align: center;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  table.history tr.history-group-row td {
+    background: rgba(118, 185, 0, 0.06);
+    border-bottom-color: rgba(118, 185, 0, 0.28);
+  }
+  table.history tr.history-run-row td {
+    background: rgba(127, 216, 255, 0.03);
+    font-size: 11.5px;
+  }
+  .toggle-history {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 6px;
+    border: 1px solid rgba(127, 216, 255, 0.35);
+    background: rgba(127, 216, 255, 0.08);
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0;
+  }
+  .history-run-label {
+    color: var(--green-soft);
+    font-weight: 700;
+  }
   .tps-cell { color: var(--blue); font-weight: 700; }
   .scroll-x { overflow-x: auto; }
   .empty { color: var(--dim); font-size: 12px; padding: 10px 2px; }
@@ -575,6 +612,7 @@ Identify every correctness issue, provide a corrected implementation with type h
       <table class="history">
         <thead>
           <tr>
+            <th class="history-toggle-col" aria-label="toggle"></th>
             <th data-sort="timestamp" onclick="sortHistory('timestamp')">time</th>
             <th data-sort="build" onclick="sortHistory('build')">build</th>
             <th data-sort="model" onclick="sortHistory('model')">model</th>
@@ -612,6 +650,7 @@ Identify every correctness issue, provide a corrected implementation with type h
   let historyRuns = [];
   let historySortKey = 'timestamp';
   let historySortDirection = 'desc';
+  let historyCollapsed = {};
   let serverStartAt = null;
   const serverStartupWaitMs = 7000;
 
@@ -953,6 +992,57 @@ Identify every correctness issue, provide a corrected implementation with type h
     renderHistory();
   }
 
+  function toggleHistoryGroup(key) {
+    historyCollapsed[key] = !historyCollapsed[key];
+    renderHistory();
+  }
+
+  function buildHistoryRow(r, options = {}) {
+    const { leadText = '', leadClass = '', toggle = null } = options;
+    const tr = document.createElement('tr');
+    const when = r.timestamp ? r.timestamp.replace('T', ' ').slice(0, 19) : '--';
+
+    const lead = document.createElement('td');
+    lead.className = leadClass || 'history-toggle-col';
+    if (toggle) {
+      lead.className = 'history-toggle-col';
+      lead.appendChild(toggle);
+    } else if (leadText) {
+      lead.textContent = leadText;
+      lead.className = 'history-run-label';
+    } else {
+      lead.textContent = '';
+    }
+    tr.appendChild(lead);
+
+    const cells = [
+      [when, ''],
+      [r.build || '--', ''],
+      [r.model || '--', ''],
+      [r.draftModel || '--', ''],
+      [r.contextSize ?? '--', 'num'],
+      [r.gpuLayers ?? '--', 'num'],
+      [r.specType || '--', ''],
+      [r.specDraftNMax ?? '--', 'num'],
+      [r.reasoningEffort || '--', ''],
+      [(r.repeatRuns ?? r.totalRuns ?? r.runIndex ?? '--'), 'num'],
+      [fmt(r.tps), 'num tps-cell'],
+      [r.tokens ?? '--', 'num'],
+      [fmt(r.promptTps), 'num'],
+      [r.acceptancePct == null ? '--' : fmt(r.acceptancePct), 'num'],
+      [fmt(r.ttftSec), 'num'],
+      [fmt(r.peakPowerW), 'num'],
+      [r.peakTempC ?? '--', 'num']
+    ];
+    cells.forEach(([text, cls]) => {
+      const td = document.createElement('td');
+      td.textContent = text;
+      if (cls) td.className = cls;
+      tr.appendChild(td);
+    });
+    return tr;
+  }
+
   function renderHistory() {
       const runs = historyRuns.slice().sort((left, right) => {
         const leftValue = left[historySortKey];
@@ -987,34 +1077,36 @@ Identify every correctness issue, provide a corrected implementation with type h
       });
 
       runs.forEach(r => {
-        const tr = document.createElement('tr');
-        const when = r.timestamp ? r.timestamp.replace('T', ' ').slice(0, 19) : '--';
-        const cells = [
-          [when, ''],
-          [r.build || '--', ''],
-          [r.model || '--', ''],
-          [r.draftModel || '--', ''],
-          [r.contextSize ?? '--', 'num'],
-          [r.gpuLayers ?? '--', 'num'],
-          [r.specType || '--', ''],
-          [r.specDraftNMax ?? '--', 'num'],
-          [r.reasoningEffort || '--', ''],
-          [(r.repeatRuns ?? r.totalRuns ?? r.runIndex ?? '--'), 'num'],
-          [fmt(r.tps), 'num tps-cell'],
-          [r.tokens ?? '--', 'num'],
-          [fmt(r.promptTps), 'num'],
-          [r.acceptancePct == null ? '--' : fmt(r.acceptancePct), 'num'],
-          [fmt(r.ttftSec), 'num'],
-          [fmt(r.peakPowerW), 'num'],
-          [r.peakTempC ?? '--', 'num']
-        ];
-        cells.forEach(([text, cls]) => {
-          const td = document.createElement('td');
-          td.textContent = text;
-          if (cls) td.className = cls;
-          tr.appendChild(td);
+        const rows = Array.isArray(r.runs) && r.runs.length ? r.runs : [];
+        const isGrouped = rows.length > 0;
+        const groupKey = `${r.timestamp || ''}|${r.model || ''}|${r.build || ''}|${r.repeatRuns ?? rows.length ?? ''}`;
+        const collapsed = !!historyCollapsed[groupKey];
+
+        const toggleButton = document.createElement('button');
+        toggleButton.type = 'button';
+        toggleButton.className = 'toggle-history';
+        toggleButton.textContent = isGrouped ? (collapsed ? '+' : '−') : '';
+        toggleButton.setAttribute('aria-expanded', String(!collapsed));
+        if (isGrouped) {
+          toggleButton.addEventListener('click', () => toggleHistoryGroup(groupKey));
+        }
+
+        const groupRow = buildHistoryRow(r, {
+          toggle: isGrouped ? toggleButton : null,
+          leadText: !isGrouped ? '' : ''
         });
-        body.appendChild(tr);
+        if (isGrouped) groupRow.classList.add('history-group-row');
+        body.appendChild(groupRow);
+
+        if (isGrouped && !collapsed) {
+          rows.forEach((run, index) => {
+            const childRow = buildHistoryRow(run, {
+              leadText: `run ${index + 1}`
+            });
+            childRow.classList.add('history-run-row');
+            body.appendChild(childRow);
+          });
+        }
       });
   }
 
