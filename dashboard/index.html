@@ -406,6 +406,37 @@
   }
   .tps-cell { color: var(--blue); font-weight: 700; }
   .scroll-x { overflow-x: auto; }
+  .history-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 12px;
+    align-items: end;
+  }
+  .history-filter {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 120px;
+    flex: 1 1 140px;
+  }
+  .history-filter label {
+    color: var(--dim);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .history-filter input,
+  .history-filter select {
+    width: 100%;
+    background: rgba(8, 12, 18, 0.9);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-family: inherit;
+    font-size: 12px;
+  }
   .empty { color: var(--dim); font-size: 12px; padding: 10px 2px; }
   .site-footer {
     position: relative;
@@ -629,6 +660,55 @@ Identify every correctness issue, provide a corrected implementation with type h
   <!-- ================= HISTORY ================= -->
   <div class="card">
     <div class="card-title">BENCHMARK HISTORY</div>
+    <div class="history-filters">
+      <div class="history-filter">
+        <label>build</label>
+        <select id="historyBuildFilter">
+          <option value="">all builds</option>
+        </select>
+      </div>
+      <div class="history-filter">
+        <label>model</label>
+        <select id="historyModelFilter">
+          <option value="">all models</option>
+        </select>
+      </div>
+      <div class="history-filter">
+        <label>reasoning</label>
+        <select id="historyReasoningFilter">
+          <option value="">all</option>
+        </select>
+      </div>
+      <div class="history-filter">
+        <label>ctx</label>
+        <select id="historyContextFilter">
+          <option value="">all</option>
+        </select>
+      </div>
+      <div class="history-filter">
+        <label>spec</label>
+        <select id="historySpecFilter">
+          <option value="">all</option>
+        </select>
+      </div>
+      <div class="history-filter">
+        <label>n-max</label>
+        <select id="historyNMaxFilter">
+          <option value="">all</option>
+        </select>
+      </div>
+      <div class="history-filter">
+        <label>min runs</label>
+        <select id="historyMinRunsFilter">
+          <option value="">any</option>
+          <option value="2">2+</option>
+          <option value="3">3+</option>
+          <option value="4">4+</option>
+          <option value="5">5+</option>
+        </select>
+      </div>
+      <button class="secondary" onclick="resetHistoryFilters()">Clear</button>
+    </div>
     <div class="scroll-x">
       <table class="history">
         <thead>
@@ -673,6 +753,15 @@ Identify every correctness issue, provide a corrected implementation with type h
   let historySortDirection = 'desc';
   let historyCollapsed = {};
   let serverStartAt = null;
+  const historyFilterIds = [
+    'historyBuildFilter',
+    'historyModelFilter',
+    'historyReasoningFilter',
+    'historyContextFilter',
+    'historySpecFilter',
+    'historyNMaxFilter',
+    'historyMinRunsFilter'
+  ];
   const serverStartupWaitMs = 7000;
 
   const $ = id => document.getElementById(id);
@@ -993,14 +1082,94 @@ Identify every correctness issue, provide a corrected implementation with type h
 
   // ---------- history ----------
 
+  function getHistoryFilters() {
+    return {
+      build: ($('historyBuildFilter') || {}).value || '',
+      model: ($('historyModelFilter') || {}).value || '',
+      reasoning: ($('historyReasoningFilter') || {}).value || '',
+      context: ($('historyContextFilter') || {}).value || '',
+      spec: ($('historySpecFilter') || {}).value || '',
+      nMax: ($('historyNMaxFilter') || {}).value || '',
+      minRuns: ($('historyMinRunsFilter') || {}).value || ''
+    };
+  }
+
+  function populateHistoryFilters() {
+    const buildSelect = $('historyBuildFilter');
+    const modelSelect = $('historyModelFilter');
+    const reasoningSelect = $('historyReasoningFilter');
+    const contextSelect = $('historyContextFilter');
+    const specSelect = $('historySpecFilter');
+    const nMaxSelect = $('historyNMaxFilter');
+    if (!buildSelect || !modelSelect || !reasoningSelect || !contextSelect || !specSelect || !nMaxSelect) return;
+
+    const currentBuild = buildSelect.value;
+    const currentModel = modelSelect.value;
+    const currentReasoning = reasoningSelect.value;
+    const currentContext = contextSelect.value;
+    const currentSpec = specSelect.value;
+    const currentNMax = nMaxSelect.value;
+
+    const buildOptions = Array.from(new Set((historyRuns || []).map(r => r.build).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+    const modelOptions = Array.from(new Set((historyRuns || []).map(r => r.model).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+    const reasoningOptions = Array.from(new Set((historyRuns || []).map(r => r.reasoningEffort).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+    const contextOptions = Array.from(new Set((historyRuns || []).map(r => r.contextSize).filter(v => v != null && v !== '') )).sort((a, b) => Number(a) - Number(b));
+    const specOptions = Array.from(new Set((historyRuns || []).map(r => r.specType).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+    const nMaxOptions = Array.from(new Set((historyRuns || []).map(r => r.specDraftNMax).filter(v => v != null && v !== '') )).sort((a, b) => Number(a) - Number(b));
+
+    buildSelect.innerHTML = '<option value="">all builds</option>' + buildOptions.map(b => `<option value="${b}">${b}</option>`).join('');
+    modelSelect.innerHTML = '<option value="">all models</option>' + modelOptions.map(m => `<option value="${m}">${m}</option>`).join('');
+    reasoningSelect.innerHTML = '<option value="">all</option>' + reasoningOptions.map(v => `<option value="${v}">${v}</option>`).join('');
+    contextSelect.innerHTML = '<option value="">all</option>' + contextOptions.map(v => `<option value="${v}">${v}</option>`).join('');
+    specSelect.innerHTML = '<option value="">all</option>' + specOptions.map(v => `<option value="${v}">${v}</option>`).join('');
+    nMaxSelect.innerHTML = '<option value="">all</option>' + nMaxOptions.map(v => `<option value="${v}">${v}</option>`).join('');
+
+    buildSelect.value = buildOptions.includes(currentBuild) ? currentBuild : '';
+    modelSelect.value = modelOptions.includes(currentModel) ? currentModel : '';
+    reasoningSelect.value = reasoningOptions.includes(currentReasoning) ? currentReasoning : '';
+    contextSelect.value = contextOptions.includes(currentContext) ? currentContext : '';
+    specSelect.value = specOptions.includes(currentSpec) ? currentSpec : '';
+    nMaxSelect.value = nMaxOptions.includes(currentNMax) ? currentNMax : '';
+  }
+
+  function resetHistoryFilters() {
+    historyFilterIds.forEach(id => {
+      const el = $(id);
+      if (!el) return;
+      el.value = '';
+    });
+    renderHistory();
+  }
+
   async function loadHistory() {
     try {
       const data = await (await fetch('/api/history')).json();
       historyRuns = data.runs || [];
+      populateHistoryFilters();
       renderHistory();
     } catch (e) {
       $('historyMsg').textContent = 'Failed to load history.';
     }
+  }
+
+  function filterHistoryRuns(runs) {
+    const filters = getHistoryFilters();
+    const minRuns = filters.minRuns ? Number(filters.minRuns) : null;
+
+    return runs.filter(r => {
+      const groupRuns = Array.isArray(r.runs) ? r.runs : [];
+      const runCount = Number(r.repeatRuns ?? r.totalRuns ?? groupRuns.length ?? 1) || 0;
+
+      const matchesBuild = !filters.build || (r.build || '') === filters.build;
+      const matchesModel = !filters.model || (r.model || '') === filters.model;
+      const matchesReasoning = !filters.reasoning || (r.reasoningEffort || '') === filters.reasoning;
+      const matchesContext = !filters.context || String(r.contextSize ?? '') === String(filters.context);
+      const matchesSpec = !filters.spec || (r.specType || '') === filters.spec;
+      const matchesNMax = !filters.nMax || String(r.specDraftNMax ?? '') === String(filters.nMax);
+      const matchesMinRuns = minRuns === null || runCount >= minRuns;
+
+      return matchesBuild && matchesModel && matchesReasoning && matchesContext && matchesSpec && matchesNMax && matchesMinRuns;
+    });
   }
 
   function sortHistory(key) {
@@ -1065,7 +1234,8 @@ Identify every correctness issue, provide a corrected implementation with type h
   }
 
   function renderHistory() {
-      const runs = historyRuns.slice().sort((left, right) => {
+      const filtered = filterHistoryRuns(historyRuns.slice());
+      const runs = filtered.sort((left, right) => {
         const leftValue = left[historySortKey];
         const rightValue = right[historySortKey];
         const leftMissing = leftValue == null || leftValue === '';
@@ -1182,6 +1352,12 @@ Identify every correctness issue, provide a corrected implementation with type h
   }
 
   // ---------- init ----------
+
+  historyFilterIds.forEach(id => {
+    const el = $(id);
+    if (!el) return;
+    el.addEventListener('change', renderHistory);
+  });
 
   $('promptInput').value = $('promptInput').value.trim();
   fetchState();

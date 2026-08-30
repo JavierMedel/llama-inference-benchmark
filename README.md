@@ -1,20 +1,35 @@
 # Local LLM Inference Benchmark Dashboard
 
-A local browser dashboard for running and benchmarking llama.cpp models with live GPU telemetry, prompt templates, and saved benchmark history.
+A sleek local dashboard for benchmarking `llama.cpp` models with live GPU telemetry, prompt workflows, and structured benchmark history.
 
-## Features
+Built for Windows, designed for fast local model evaluation, and optimized for comparing throughput, latency, power draw, and speculative decoding behavior without leaving the browser.
 
-- Select a llama.cpp build from a discovered builds folder
-- Discover GGUF models from a configured models directory
-- Choose an optional draft / MTP model for speculative decoding
-- Launch, monitor, and stop llama-server directly from the browser
-- Auto-detect the installed NVIDIA GPU model name from `nvidia-smi`
-- Show live GPU telemetry: power, utilization, VRAM, temperature, clocks, p-state
-- Stream generation output in real time and watch tokens/sec update live
-- Save benchmark runs to `benchmark-history.json`
-- Save and reload prompt templates from `prompt-templates.json`
-- Clear history and download saved benchmark history as JSON
-- No Node.js, no build step, no package install required
+## Why this project
+
+This dashboard helps you answer practical questions quickly:
+
+- Which model is fastest on my hardware?
+- How does draft / MTP decoding affect throughput?
+- What is the real latency to first token?
+- How much power and VRAM is being used during generation?
+- Which prompts and settings produce the most stable results?
+
+Instead of juggling multiple terminals and JSON logs, the project gives you a single local control panel for server startup, prompt execution, live metrics, and saved benchmark comparisons.
+
+---
+
+## Highlights
+
+- Discover and select local `llama.cpp` builds
+- Scan recursively for GGUF models and draft / MTP variants
+- Start, monitor, and stop the local inference server from the browser
+- Stream model output with live token throughput updates
+- View real-time GPU telemetry: power, utilization, temperature, clocks, VRAM, and p-state
+- Save reusable prompt templates and reload them instantly
+- Keep benchmark history in `benchmark-history.json`
+- Filter, sort, and inspect saved benchmark results in the history table
+- Export the saved history as JSON when needed
+- Zero frontend framework, zero package install, zero build pipeline
 
 ---
 
@@ -23,7 +38,7 @@ A local browser dashboard for running and benchmarking llama.cpp models with liv
 From the project root:
 
 ```powershell
-cd "C:\Users\alien51\Desktop\benchmark"
+cd "C:\Users\alien51\Desktop\llama-inference-benchmark"
 .\dashboard.ps1
 ```
 
@@ -33,13 +48,13 @@ Or with custom directories:
 .\dashboard.ps1 -BuildsDir "C:\Users\alien51\Documents\Llama-Server" -ModelsDir "C:\AI\Models"
 ```
 
-Then open:
+Open the dashboard here:
 
 ```text
 http://localhost:8090/
 ```
 
-If port 8090 is already in use, run with a different port:
+If port 8090 is already in use, run another instance on another port:
 
 ```powershell
 .\dashboard.ps1 -Port 8091
@@ -59,7 +74,7 @@ If port 8090 is already in use, run with a different port:
 
 ---
 
-## Expected folder layout
+## Typical folder layout
 
 ### Builds folder
 
@@ -73,7 +88,7 @@ C:\Users\alien51\Documents\Llama-Server\
 
 ### Models folder
 
-The dashboard scans recursively for GGUF files, and will also recognize draft / MTP files in folders named `MTP` or `draft`.
+The dashboard scans recursively for GGUF files and recognizes draft / MTP models in directories named `MTP` or `draft`.
 
 ```text
 C:\AI\Models\
@@ -85,12 +100,12 @@ C:\AI\Models\
 
 ---
 
-## Using the dashboard
+## How to use the dashboard
 
-1. Set the builds folder and click Scan.
-2. Set the models folder and click Scan.
-3. Select the llama.cpp build and model.
-4. Optionally choose a draft / MTP model.
+1. Point the dashboard at your builds folder and click Scan.
+2. Point it at your models folder and click Scan.
+3. Select the `llama.cpp` build and model.
+4. Optionally choose a draft or MTP model to compare speculative decoding setups.
 5. Configure runtime settings:
    - context size
    - GPU layers
@@ -100,27 +115,27 @@ C:\AI\Models\
    - host and port
    - extra args
 6. Click Start Server.
-7. Enter a prompt and choose a max token count and temperature.
-8. Click Run Prompt to stream the completion and watch tokens/sec update live.
-9. Review the output panel and saved history.
+7. Enter a prompt and set max tokens / temperature.
+8. Click Run Prompt to stream the output and watch the live throughput metric update.
+9. Review the generated output and saved benchmark history.
 
-The dashboard also exposes:
+The interface also includes:
 
-- a server status pill and startup progress indicator
-- live metadata about generation timing and throughput
-- a copy-output button for the current generation output
+- a live server status indicator
+- startup progress feedback
 - prompt template save/load support
-- benchmark history refresh, clear, and JSON download
+- history filtering and sorting
+- JSON export for saved benchmark data
 
 ---
 
 ## Saved prompt templates
 
-The web UI includes a Save Template and Load Template workflow.
+The dashboard includes a Save Template and Load Template flow.
 
-- Templates are stored in `prompt-templates.json` in the project root.
-- You can save a named prompt and reload it later from the dropdown.
-- This is useful for repeated benchmark prompts like code reviews, summarization, or structured output tests.
+- Templates are stored in `prompt-templates.json` at the project root.
+- You can save repeated prompts and re-use them later from the dropdown.
+- This is ideal for code-review prompts, summarization tasks, and structured-response benchmarks.
 
 ---
 
@@ -128,34 +143,35 @@ The web UI includes a Save Template and Load Template workflow.
 
 Every completed benchmark request is appended to `benchmark-history.json` in the project root.
 
-Each saved record includes:
+Each entry stores:
 
-- build and model information
+- build and model identity
 - optional draft / MTP model
 - context size and GPU layers
-- spec type and draft n-max
+- spec type and n-max settings
 - reasoning effort
-- token throughput and elapsed time
-- time-to-first-token
-- GPT-style aggregate metrics when available
-- GPU name, power draw, temperature, and VRAM usage
+- throughput and elapsed time
+- time-to-first-token metrics
+- acceptance percentage when available
+- measured power draw, temperature, and VRAM usage
 
-If repeat runs are set to more than 1, the row stores a single averaged result for that benchmark run.
+If repeat runs are enabled, the dashboard records a grouped benchmark summary and preserves the individual run values underneath it for comparison.
 
 You can:
 
 - refresh history from the UI
 - clear all saved runs
-- download the history file as JSON
-- sort the table columns by clicking the headers
+- download the JSON file
+- sort by column
+- filter by build, model, reasoning level, context, spec, n-max, and run count
 
 ---
 
-## Live telemetry behavior
+## Live telemetry
 
-The dashboard polls `nvidia-smi` once per second to read the current card state and updates the UI in real time.
+The dashboard polls `nvidia-smi` once per second to update the live card statistics.
 
-The model name is auto-detected using:
+The GPU name is detected with:
 
 ```powershell
 nvidia-smi --query-gpu=name --format=csv,noheader
@@ -167,13 +183,13 @@ The full telemetry query used by the poller is:
 nvidia-smi --query-gpu=timestamp,name,pstate,power.draw,temperature.gpu,clocks.sm,clocks.mem,utilization.gpu,utilization.memory,memory.used,memory.total --format=csv,noheader,nounits
 ```
 
-If `nvidia-smi` is unavailable or not installed, the app still runs and the GPU values fall back to empty or zero values instead of crashing.
+If `nvidia-smi` is missing, the dashboard still works and the GPU metrics simply fall back to empty values instead of crashing.
 
 ---
 
 ## HTTP API
 
-The dashboard exposes a small JSON API that can be used by scripts or tooling.
+The dashboard exposes a compact JSON API for automation and scripting.
 
 | Method | Endpoint | Purpose |
 |---|---|---|
@@ -191,17 +207,17 @@ The dashboard exposes a small JSON API that can be used by scripts or tooling.
 
 ---
 
-## How it works
+## Architecture
 
-`dashboard.ps1` uses PowerShell runspaces and a synchronized shared state hashtable to keep the UI responsive while running the background tasks.
+`dashboard.ps1` uses PowerShell runspaces and a synchronized shared state hashtable so the UI stays responsive while long-running tasks execute in the background.
 
 | Component | Role |
 |---|---|
-| GPU poller | Reads `nvidia-smi` telemetry and updates the dashboard state |
-| HTTP server | Serves the HTML UI and JSON API |
-| Generation worker | Streams completions from llama-server and persists results to history |
+| GPU poller | Reads `nvidia-smi` telemetry and updates dashboard state |
+| HTTP server | Serves the HTML interface and JSON endpoints |
+| Generation worker | Streams completions from llama-server and stores results |
 
-The browser polls `/api/state` and re-renders the dashboard without needing a frontend framework or build pipeline.
+The browser polls `/api/state` and re-renders the dashboard without a frontend framework or a separate build step.
 
 ---
 
@@ -219,6 +235,17 @@ That script sends a fixed prompt multiple times and prints averages, per-run res
 
 ## Notes
 
-- This project is intentionally zero-dependency and designed for local benchmarking.
-- It is Windows-focused and built around PowerShell + `llama-server` + `nvidia-smi`.
-- The app uses plain static HTML + JavaScript, so there is no framework to install or compile.
+- This project is intentionally lightweight and local-first.
+- It is designed around PowerShell, `llama-server`, and `nvidia-smi` on Windows.
+- The app is built with plain HTML and JavaScript, so there is no dependency install or frontend compilation needed.
+
+---
+
+## Project snapshot
+
+This project is best used when you want a fast evaluation loop for local inference:
+
+- benchmark a model under the exact conditions you care about
+- compare draft / MTP strategies quickly
+- keep a record of your best-performing runs
+- iterate on prompts and runtime settings without leaving the dashboard
