@@ -4,10 +4,6 @@
   <img src="./ezgif-6d46031ac870db31.gif" alt="Demo GIF" width="960" />
 </p>
 
-A sleek local dashboard for benchmarking `llama.cpp` models with live GPU telemetry, prompt workflows, and structured benchmark history.
-
-Built for Windows, designed for fast local model evaluation, and optimized for comparing throughput, latency, power draw, and speculative decoding behavior without leaving the browser.
-
 <div align="center">
 
 ![Windows](https://img.shields.io/badge/Platform-Windows-0078D6?style=for-the-badge&logo=windows)
@@ -16,6 +12,10 @@ Built for Windows, designed for fast local model evaluation, and optimized for c
 ![GPU](https://img.shields.io/badge/GPU-NVIDIA%20Telemetry-76B900?style=for-the-badge)
 
 </div>
+
+A sleek local dashboard for benchmarking `llama.cpp` models with live GPU telemetry, prompt workflows, and structured benchmark history.
+
+Built for Windows, designed for fast local model evaluation, and optimized for comparing throughput, latency, power draw, and speculative decoding behavior without leaving the browser.
 
 ## 💡 Why this project
 
