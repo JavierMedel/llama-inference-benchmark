@@ -101,12 +101,19 @@
   .row {
     display: flex;
     justify-content: space-between;
-    font-size: 14px;
+    font-size: 15px;
     color: var(--dim);
     padding: 6px 0;
     border-top: 1px solid rgba(255,255,255,0.06);
   }
-  .row span.val { color: var(--text); font-weight: 600; }
+  .row span.val {
+    color: var(--text);
+    font-weight: 700;
+    font-size: 16px;
+  }
+  .row span {
+    font-size: 14px;
+  }
 
   .vram-bar-wrap { margin: 18px 0; }
   .vram-bar {
@@ -1271,7 +1278,7 @@ Identify every correctness issue, provide a corrected implementation with type h
         const rows = Array.isArray(r.runs) && r.runs.length ? r.runs : [];
         const isGrouped = rows.length > 0;
         const groupKey = `${r.timestamp || ''}|${r.model || ''}|${r.build || ''}|${r.repeatRuns ?? rows.length ?? ''}`;
-        const collapsed = !!historyCollapsed[groupKey];
+        const collapsed = isGrouped ? (historyCollapsed[groupKey] ?? true) : false;
 
         const toggleButton = document.createElement('button');
         toggleButton.type = 'button';
