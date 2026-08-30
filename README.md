@@ -1,5 +1,9 @@
 # 🚀 Local LLM Inference Benchmark Dashboard
 
+<p align="center">
+  <img src="./ezgif-6d46031ac870db31.gif" alt="Demo GIF" width="960" />
+</p>
+
 A sleek local dashboard for benchmarking `llama.cpp` models with live GPU telemetry, prompt workflows, and structured benchmark history.
 
 Built for Windows, designed for fast local model evaluation, and optimized for comparing throughput, latency, power draw, and speculative decoding behavior without leaving the browser.

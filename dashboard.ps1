@@ -31,6 +31,32 @@ param(
     [int]$Port         = 8090
 )
 
+function Get-AvailableTcpPort {
+    param(
+        [int]$PreferredPort = 8090,
+        [int]$MaxAttempts = 20
+    )
+
+    for ($port = $PreferredPort; $port -lt ($PreferredPort + $MaxAttempts); $port++) {
+        $listener = $null
+        try {
+            $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
+            $listener.Start()
+            return $port
+        }
+        catch {
+            continue
+        }
+        finally {
+            if ($listener) { $listener.Stop() }
+        }
+    }
+
+    throw "No free local TCP port available in the range $PreferredPort-$($PreferredPort + $MaxAttempts - 1)."
+}
+
+$Port = Get-AvailableTcpPort -PreferredPort $Port
+
 $ScriptDir           = Split-Path -Parent $MyInvocation.MyCommand.Path
 $WebRoot             = Join-Path $ScriptDir "dashboard"
 $IndexPath           = Join-Path $WebRoot "index.html"
@@ -81,6 +107,7 @@ $Sync = [hashtable]::Synchronized(@{
     Gpu = @{
         name       = "NVIDIA GPU"
         power      = 0
+        powerLimit = 0
         temp       = 0
         util       = 0
         memUtil    = 0
@@ -180,8 +207,32 @@ function Get-NvidiaGpuModelName {
     return "NVIDIA GPU"
 }
 
+function Convert-To-DoubleOrDefault {
+    param(
+        [AllowNull()]
+        $Value,
+
+        [double]$Default = 0
+    )
+
+    if ($null -eq $Value) { return $Default }
+
+    $text = [string]$Value
+    if ([string]::IsNullOrWhiteSpace($text)) { return $Default }
+
+    $trimmed = $text.Trim()
+    if ($trimmed -match '^(\[N/A\]|N/A|Unknown|Not Available)$') { return $Default }
+
+    try {
+        return [double]$trimmed
+    }
+    catch {
+        return $Default
+    }
+}
+
 function Update-GpuTelemetryFromNvidiaSmi {
-    $query = "timestamp,name,pstate,power.draw,temperature.gpu,clocks.sm,clocks.mem,utilization.gpu,utilization.memory,memory.used,memory.total"
+    $query = "timestamp,name,pstate,power.draw,power.default_limit,power.max_limit,power.limit,temperature.gpu,clocks.sm,clocks.mem,utilization.gpu,utilization.memory,memory.used,memory.total"
 
     try {
         $csvLine = & nvidia-smi --query-gpu=$query --format=csv,noheader,nounits 2>$null |
@@ -191,7 +242,7 @@ function Update-GpuTelemetryFromNvidiaSmi {
 
         $parts = @($csvLine -split ',') | ForEach-Object { $_.Trim() }
         $fieldNames = @(
-            'timestamp', 'name', 'pstate', 'power.draw', 'temperature.gpu', 'clocks.sm',
+            'timestamp', 'name', 'pstate', 'power.draw', 'power.default_limit', 'power.max_limit', 'power.limit', 'temperature.gpu', 'clocks.sm',
             'clocks.mem', 'utilization.gpu', 'utilization.memory', 'memory.used', 'memory.total'
         )
 
@@ -205,24 +256,29 @@ function Update-GpuTelemetryFromNvidiaSmi {
             $Sync.Gpu.name = $gpuName
         }
 
-        $powerDraw = if ($valueMap['power.draw']) { $valueMap['power.draw'] } else { 0 }
-        $temperature = if ($valueMap['temperature.gpu']) { $valueMap['temperature.gpu'] } else { 0 }
-        $smClock = if ($valueMap['clocks.sm']) { $valueMap['clocks.sm'] } else { 0 }
-        $memoryClock = if ($valueMap['clocks.mem']) { $valueMap['clocks.mem'] } else { 0 }
-        $gpuUtilization = if ($valueMap['utilization.gpu']) { $valueMap['utilization.gpu'] } else { 0 }
-        $memoryUtilization = if ($valueMap['utilization.memory']) { $valueMap['utilization.memory'] } else { 0 }
-        $memoryUsed = if ($valueMap['memory.used']) { $valueMap['memory.used'] } else { 0 }
-        $memoryTotal = if ($valueMap['memory.total']) { $valueMap['memory.total'] } else { 0 }
+        $powerDraw = Convert-To-DoubleOrDefault $valueMap['power.draw']
+        $powerDefaultLimit = Convert-To-DoubleOrDefault $valueMap['power.default_limit']
+        $powerMaxLimit = Convert-To-DoubleOrDefault $valueMap['power.max_limit']
+        $powerLimitValue = Convert-To-DoubleOrDefault $valueMap['power.limit']
+        $powerLimit = if ($powerLimitValue -gt 0) { $powerLimitValue } elseif ($powerDefaultLimit -gt 0) { $powerDefaultLimit } elseif ($powerMaxLimit -gt 0) { $powerMaxLimit } else { 0 }
+        $temperature = Convert-To-DoubleOrDefault $valueMap['temperature.gpu']
+        $smClock = Convert-To-DoubleOrDefault $valueMap['clocks.sm']
+        $memoryClock = Convert-To-DoubleOrDefault $valueMap['clocks.mem']
+        $gpuUtilization = Convert-To-DoubleOrDefault $valueMap['utilization.gpu']
+        $memoryUtilization = Convert-To-DoubleOrDefault $valueMap['utilization.memory']
+        $memoryUsed = Convert-To-DoubleOrDefault $valueMap['memory.used']
+        $memoryTotal = Convert-To-DoubleOrDefault $valueMap['memory.total']
 
         $Sync.Gpu.pstate     = if (-not [string]::IsNullOrWhiteSpace($valueMap['pstate'])) { $valueMap['pstate'] } else { '--' }
-        $Sync.Gpu.power      = [math]::Round([double]$powerDraw, 1)
-        $Sync.Gpu.temp       = [double]$temperature
-        $Sync.Gpu.clockSm    = [double]$smClock
-        $Sync.Gpu.clockMem   = [double]$memoryClock
-        $Sync.Gpu.util       = [double]$gpuUtilization
-        $Sync.Gpu.memUtil    = [double]$memoryUtilization
-        $Sync.Gpu.memUsedGB  = [math]::Round(([double]$memoryUsed / 1024), 2)
-        $Sync.Gpu.memTotalGB = [math]::Round(([double]$memoryTotal / 1024), 2)
+        $Sync.Gpu.power      = [math]::Round($powerDraw, 1)
+        $Sync.Gpu.powerLimit = [math]::Round($powerLimit, 1)
+        $Sync.Gpu.temp       = [math]::Round($temperature, 1)
+        $Sync.Gpu.clockSm    = [math]::Round($smClock, 1)
+        $Sync.Gpu.clockMem   = [math]::Round($memoryClock, 1)
+        $Sync.Gpu.util       = [math]::Round($gpuUtilization, 1)
+        $Sync.Gpu.memUtil    = [math]::Round($memoryUtilization, 1)
+        $Sync.Gpu.memUsedGB  = [math]::Round(($memoryUsed / 1024), 2)
+        $Sync.Gpu.memTotalGB = [math]::Round(($memoryTotal / 1024), 2)
     }
     catch {
         # nvidia-smi missing or transient failure - keep previous readings
@@ -234,7 +290,7 @@ function Update-GpuTelemetryFromNvidiaSmi {
 # ============================================================
 
 $GpuPollScript = {
-    $query = "timestamp,name,pstate,power.draw,temperature.gpu,clocks.sm,clocks.mem,utilization.gpu,utilization.memory,memory.used,memory.total"
+    $query = "timestamp,name,pstate,power.draw,power.default_limit,power.max_limit,power.limit,temperature.gpu,clocks.sm,clocks.mem,utilization.gpu,utilization.memory,memory.used,memory.total"
 
     while ($true) {
         try {
@@ -244,7 +300,7 @@ $GpuPollScript = {
             if ($csvLine) {
                 $parts = @($csvLine -split ',') | ForEach-Object { $_.Trim() }
                 $fieldNames = @(
-                    'timestamp', 'name', 'pstate', 'power.draw', 'temperature.gpu', 'clocks.sm',
+                    'timestamp', 'name', 'pstate', 'power.draw', 'power.default_limit', 'power.max_limit', 'power.limit', 'temperature.gpu', 'clocks.sm',
                     'clocks.mem', 'utilization.gpu', 'utilization.memory', 'memory.used', 'memory.total'
                 )
 
@@ -258,24 +314,29 @@ $GpuPollScript = {
                     $Sync.Gpu.name = $gpuName
                 }
 
-                $powerDraw = if ($valueMap['power.draw']) { $valueMap['power.draw'] } else { 0 }
-                $temperature = if ($valueMap['temperature.gpu']) { $valueMap['temperature.gpu'] } else { 0 }
-                $smClock = if ($valueMap['clocks.sm']) { $valueMap['clocks.sm'] } else { 0 }
-                $memoryClock = if ($valueMap['clocks.mem']) { $valueMap['clocks.mem'] } else { 0 }
-                $gpuUtilization = if ($valueMap['utilization.gpu']) { $valueMap['utilization.gpu'] } else { 0 }
-                $memoryUtilization = if ($valueMap['utilization.memory']) { $valueMap['utilization.memory'] } else { 0 }
-                $memoryUsed = if ($valueMap['memory.used']) { $valueMap['memory.used'] } else { 0 }
-                $memoryTotal = if ($valueMap['memory.total']) { $valueMap['memory.total'] } else { 0 }
+                $powerDraw = Convert-To-DoubleOrDefault $valueMap['power.draw']
+                $powerDefaultLimit = Convert-To-DoubleOrDefault $valueMap['power.default_limit']
+                $powerMaxLimit = Convert-To-DoubleOrDefault $valueMap['power.max_limit']
+                $powerLimitValue = Convert-To-DoubleOrDefault $valueMap['power.limit']
+                $powerLimit = if ($powerLimitValue -gt 0) { $powerLimitValue } elseif ($powerDefaultLimit -gt 0) { $powerDefaultLimit } elseif ($powerMaxLimit -gt 0) { $powerMaxLimit } else { 0 }
+                $temperature = Convert-To-DoubleOrDefault $valueMap['temperature.gpu']
+                $smClock = Convert-To-DoubleOrDefault $valueMap['clocks.sm']
+                $memoryClock = Convert-To-DoubleOrDefault $valueMap['clocks.mem']
+                $gpuUtilization = Convert-To-DoubleOrDefault $valueMap['utilization.gpu']
+                $memoryUtilization = Convert-To-DoubleOrDefault $valueMap['utilization.memory']
+                $memoryUsed = Convert-To-DoubleOrDefault $valueMap['memory.used']
+                $memoryTotal = Convert-To-DoubleOrDefault $valueMap['memory.total']
 
                 $Sync.Gpu.pstate     = if (-not [string]::IsNullOrWhiteSpace($valueMap['pstate'])) { $valueMap['pstate'] } else { '--' }
-                $Sync.Gpu.power      = [math]::Round([double]$powerDraw, 1)
-                $Sync.Gpu.temp       = [double]$temperature
-                $Sync.Gpu.clockSm    = [double]$smClock
-                $Sync.Gpu.clockMem   = [double]$memoryClock
-                $Sync.Gpu.util       = [double]$gpuUtilization
-                $Sync.Gpu.memUtil    = [double]$memoryUtilization
-                $Sync.Gpu.memUsedGB  = [math]::Round(([double]$memoryUsed / 1024), 2)
-                $Sync.Gpu.memTotalGB = [math]::Round(([double]$memoryTotal / 1024), 2)
+                $Sync.Gpu.power      = [math]::Round($powerDraw, 1)
+                $Sync.Gpu.powerLimit = [math]::Round($powerLimit, 1)
+                $Sync.Gpu.temp       = [math]::Round($temperature, 1)
+                $Sync.Gpu.clockSm    = [math]::Round($smClock, 1)
+                $Sync.Gpu.clockMem   = [math]::Round($memoryClock, 1)
+                $Sync.Gpu.util       = [math]::Round($gpuUtilization, 1)
+                $Sync.Gpu.memUtil    = [math]::Round($memoryUtilization, 1)
+                $Sync.Gpu.memUsedGB  = [math]::Round(($memoryUsed / 1024), 2)
+                $Sync.Gpu.memTotalGB = [math]::Round(($memoryTotal / 1024), 2)
             }
         }
         catch {
@@ -428,6 +489,7 @@ $GenerateScript = {
             $Sync.Gen.promptTps = $promptTps
 
             $record = [PSCustomObject]@{
+                id              = [guid]::NewGuid().ToString()
                 timestamp       = (Get-Date).ToString("s")
                 build           = $Sync.Server.build
                 model           = $Sync.Server.model
@@ -481,6 +543,7 @@ $GenerateScript = {
             }
 
             $groupRecord = [PSCustomObject]@{
+                id              = [guid]::NewGuid().ToString()
                 timestamp       = (Get-Date).ToString("s")
                 build           = $runRecords[0].build
                 model           = $runRecords[0].model
@@ -985,6 +1048,140 @@ function Save-PromptTemplate {
     return @{ ok = $true; message = "Template saved: $TemplateName"; templates = $updated }
 }
 
+function Get-HistoryItemId {
+    param([object]$Entry)
+
+    if ($null -eq $Entry) { return $null }
+
+    if ($Entry -is [System.Collections.IDictionary]) {
+        if ($Entry.ContainsKey('id')) { return [string]$Entry['id'] }
+    }
+    elseif ($Entry.PSObject -and $Entry.PSObject.Properties.Name -contains 'id') {
+        if ($null -ne $Entry.id) { return [string]$Entry.id }
+    }
+
+    return Get-HistoryRowKey -Entry $Entry
+}
+
+function Get-HistoryRowKey {
+    param([object]$Entry)
+
+    if ($null -eq $Entry) { return $null }
+
+    $timestamp = if ($null -ne $Entry.timestamp) { [string]$Entry.timestamp } else { '' }
+    $build = if ($null -ne $Entry.build) { [string]$Entry.build } else { '' }
+    $model = if ($null -ne $Entry.model) { [string]$Entry.model } else { '' }
+    $runIndex = if ($null -ne $Entry.runIndex) { [string]$Entry.runIndex } else { '1' }
+
+    $hasRunsProp = $false
+    if ($Entry -is [System.Collections.IDictionary]) {
+        $hasRunsProp = $Entry.ContainsKey('runs')
+    }
+    elseif ($Entry.PSObject -and $Entry.PSObject.Properties.Name -contains 'runs') {
+        $hasRunsProp = $true
+    }
+
+    if ($null -ne $Entry.totalRuns) {
+        $totalRuns = [string]$Entry.totalRuns
+    }
+    elseif ($hasRunsProp) {
+        $totalRuns = [string]@($Entry.runs).Count
+    }
+    else {
+        $totalRuns = '1'
+    }
+
+    return "$timestamp|$build|$model|$runIndex|$totalRuns"
+}
+
+function Delete-BenchmarkHistoryByKeys {
+    param([string[]]$Keys)
+
+    $selectedKeys = @($Keys | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if (-not $selectedKeys.Count) {
+        return @{ ok = $true; message = "No history entries selected."; deleted = 0 }
+    }
+
+    if (-not (Test-Path $ResultsPath)) {
+        return @{ ok = $true; message = "No history file found."; deleted = 0 }
+    }
+
+    try {
+        $raw = Get-Content -Path $ResultsPath -Raw -Encoding UTF8
+        if ([string]::IsNullOrWhiteSpace($raw.Trim())) {
+            return @{ ok = $true; message = "History file is empty."; deleted = 0 }
+        }
+
+        $history = @($raw | ConvertFrom-Json)
+        $deleted = 0
+        $filtered = @()
+
+        foreach ($entry in $history) {
+            $entryId = Get-HistoryItemId -Entry $entry
+            if ($selectedKeys -contains $entryId) {
+                $deleted += 1
+                continue
+            }
+
+            $hasRunsProp = $false
+            if ($entry -and $entry -is [System.Collections.IDictionary]) {
+                $hasRunsProp = $entry.ContainsKey('runs')
+            }
+            elseif ($entry -and $entry.PSObject -and $entry.PSObject.Properties.Name -contains 'runs') {
+                $hasRunsProp = $true
+            }
+
+            if ($hasRunsProp) {
+                $runs = @($entry.runs)
+                $remainingRuns = @()
+
+                foreach ($run in $runs) {
+                    $runId = Get-HistoryItemId -Entry $run
+                    if ($selectedKeys -contains $runId) {
+                        $deleted += 1
+                        continue
+                    }
+                    $remainingRuns += $run
+                }
+
+                if ($remainingRuns.Count -gt 0) {
+                    $entryProps = [ordered]@{}
+                    foreach ($prop in $entry.PSObject.Properties) {
+                        $entryProps[$prop.Name] = $prop.Value
+                    }
+                    $entryProps['runs'] = $remainingRuns
+                    $filtered += [pscustomobject]$entryProps
+                }
+                continue
+            }
+
+            $filtered += $entry
+        }
+
+        if ($filtered.Count -eq $history.Count) {
+            $allKeys = @()
+            foreach ($entry in $history) {
+                $allKeys += Get-HistoryRowKey -Entry $entry
+                if ($entry -and $entry.runs) {
+                    foreach ($run in @($entry.runs)) {
+                        $allKeys += Get-HistoryRowKey -Entry $run
+                    }
+                }
+            }
+            $matched = @($selectedKeys | Where-Object { $allKeys -contains $_ })
+            if (-not $matched.Count) {
+                return @{ ok = $true; message = "No matching history entries found."; deleted = 0 }
+            }
+        }
+
+        $filtered | ConvertTo-Json -Depth 50 | Out-File -FilePath $ResultsPath -Encoding UTF8
+        return @{ ok = $true; message = "Deleted $deleted selected benchmark record(s)."; deleted = $deleted }
+    }
+    catch {
+        return @{ ok = $false; message = "Failed to delete selected history entries: $($_.Exception.Message)"; deleted = 0 }
+    }
+}
+
 function Clear-BenchmarkHistory {
     if (Test-Path $ResultsPath) { Remove-Item $ResultsPath -Force }
     return @{ ok = $true; message = "Benchmark history cleared." }
@@ -1096,6 +1293,7 @@ try {
                     gpu = @{
                         name       = $Sync.Gpu.name
                         power      = $Sync.Gpu.power
+                        powerLimit = $Sync.Gpu.powerLimit
                         temp       = $Sync.Gpu.temp
                         util       = $Sync.Gpu.util
                         memUtil    = $Sync.Gpu.memUtil
@@ -1287,6 +1485,19 @@ try {
                 Write-JsonResponse -Context $context -Obj @{
                     ok = $true; runs = @(Get-BenchmarkHistory)
                 }
+            }
+
+            elseif ($method -eq "POST" -and $path -eq "/api/history/delete") {
+
+                $parsed = $null
+                try { $parsed = (Read-RequestBody -Request $request) | ConvertFrom-Json } catch { }
+
+                $keys = @()
+                if ($parsed -and $parsed.keys) {
+                    $keys = @($parsed.keys | ForEach-Object { [string]$_ })
+                }
+
+                Write-JsonResponse -Context $context -Obj (Delete-BenchmarkHistoryByKeys -Keys $keys)
             }
 
             elseif ($method -eq "POST" -and $path -eq "/api/history/clear") {

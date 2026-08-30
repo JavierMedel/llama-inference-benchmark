@@ -340,9 +340,17 @@
   .meta-line.err { color: #ffb3b3; }
 
   table.history {
-    width: 100%;
-    border-collapse: collapse;
+    width: max-content;
+    min-width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
     font-size: 12px;
+    table-layout: auto;
+  }
+  table.history th,
+  table.history td {
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   table.history th {
     text-align: left;
@@ -377,42 +385,73 @@
   table.history th.history-toggle-col,
   table.history td.history-toggle-col,
   table.history td.history-run-label {
-    width: 28px;
-    min-width: 28px;
-    max-width: 28px;
+    width: 72px;
+    min-width: 72px;
+    max-width: 72px;
     text-align: center;
-    padding-left: 4px;
-    padding-right: 4px;
+    padding-left: 8px;
+    padding-right: 8px;
+    white-space: nowrap;
+  }
+  table.history th.history-toggle-col input[type="checkbox"],
+  table.history td.history-toggle-col input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--green-soft);
+    cursor: pointer;
+    margin: 0;
+  }
+  table.history .history-row-actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-width: 52px;
+    white-space: nowrap;
   }
   table.history tr.history-group-row td {
     background: rgba(118, 185, 0, 0.06);
     border-bottom-color: rgba(118, 185, 0, 0.28);
+    box-shadow: inset 0 0 0 1px rgba(118, 185, 0, 0.12);
   }
   table.history tr.history-run-row td {
     background: rgba(127, 216, 255, 0.03);
     font-size: 11.5px;
   }
+  table.history tr.history-run-row td:first-child {
+    padding-left: 18px;
+  }
   .toggle-history {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 18px;
-    height: 18px;
+    width: 22px;
+    height: 22px;
     border-radius: 6px;
     border: 1px solid rgba(127, 216, 255, 0.35);
-    background: rgba(127, 216, 255, 0.08);
+    background: rgba(127, 216, 255, 0.1);
     color: var(--text);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     cursor: pointer;
     padding: 0;
+    line-height: 1;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+    position: relative;
+    z-index: 2;
   }
   .history-run-label {
     color: var(--green-soft);
     font-weight: 700;
   }
   .tps-cell { color: var(--blue); font-weight: 700; }
-  .scroll-x { overflow-x: auto; }
+  .scroll-x {
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.04);
+    background: rgba(8, 12, 18, 0.3);
+  }
   .history-filters {
     display: flex;
     flex-wrap: wrap;
@@ -720,7 +759,7 @@ Identify every correctness issue, provide a corrected implementation with type h
       <table class="history">
         <thead>
           <tr>
-            <th class="history-toggle-col" aria-label="toggle"></th>
+            <th class="history-toggle-col" aria-label="select"><input type="checkbox" id="historySelectAll" title="Select all" /></th>
             <th data-sort="timestamp" onclick="sortHistory('timestamp')">time</th>
             <th data-sort="build" onclick="sortHistory('build')">build</th>
             <th data-sort="model" onclick="sortHistory('model')">model</th>
@@ -747,6 +786,7 @@ Identify every correctness issue, provide a corrected implementation with type h
     <div class="controls">
       <button class="secondary" onclick="loadHistory()">Refresh</button>
       <button class="secondary" onclick="downloadHistoryFile()">Download History</button>
+      <button class="secondary" onclick="deleteSelectedHistory()">Delete Selected</button>
       <button class="secondary" onclick="clearHistory()">Delete History</button>
       <span class="meta-line" id="historyMsg"></span>
     </div>
@@ -759,6 +799,7 @@ Identify every correctness issue, provide a corrected implementation with type h
   let historySortKey = 'timestamp';
   let historySortDirection = 'desc';
   let historyCollapsed = {};
+  let historySelection = new Set();
   let serverStartAt = null;
   const historyFilterIds = [
     'historyBuildFilter',
@@ -1194,22 +1235,62 @@ Identify every correctness issue, provide a corrected implementation with type h
     renderHistory();
   }
 
+  function getHistoryRecordId(r) {
+    if (!r) return null;
+    return r.id || getHistoryRecordKey(r);
+  }
+
+  function getHistoryRecordKey(r) {
+    if (!r) return null;
+    const ts = r.timestamp || '';
+    const build = r.build || '';
+    const model = r.model || '';
+    const runIndex = r.runIndex ?? 1;
+    const totalRuns = r.totalRuns ?? (Array.isArray(r.runs) ? r.runs.length : 1);
+    return `${ts}|${build}|${model}|${runIndex}|${totalRuns}`;
+  }
+
+  function setHistorySelectionState(rowId, checked) {
+    if (!rowId) return;
+    if (checked) historySelection.add(rowId);
+    else historySelection.delete(rowId);
+    const selectAll = $('historySelectAll');
+    if (selectAll) {
+      const visible = document.querySelectorAll('input.history-select-box').length;
+      const checkedCount = document.querySelectorAll('input.history-select-box:checked').length;
+      selectAll.checked = visible > 0 && checkedCount === visible;
+      selectAll.indeterminate = checkedCount > 0 && checkedCount < visible;
+    }
+  }
+
   function buildHistoryRow(r, options = {}) {
-    const { leadText = '', leadClass = '', toggle = null } = options;
+    const { leadText = '', leadClass = '', toggle = null, rowId = null } = options;
     const tr = document.createElement('tr');
     const when = r.timestamp ? r.timestamp.replace('T', ' ').slice(0, 19) : '--';
 
     const lead = document.createElement('td');
     lead.className = leadClass || 'history-toggle-col';
+    const rowSelection = document.createElement('input');
+    rowSelection.type = 'checkbox';
+    rowSelection.className = 'history-select-box';
+    rowSelection.dataset.rowId = rowId || '';
+    rowSelection.checked = rowId ? historySelection.has(rowId) : false;
+    rowSelection.addEventListener('change', () => setHistorySelectionState(rowId, rowSelection.checked));
+
+    const actionWrap = document.createElement('span');
+    actionWrap.className = 'history-row-actions';
+    actionWrap.appendChild(rowSelection);
+
     if (toggle) {
-      lead.className = 'history-toggle-col';
-      lead.appendChild(toggle);
+      actionWrap.appendChild(toggle);
     } else if (leadText) {
-      lead.textContent = leadText;
-      lead.className = 'history-run-label';
-    } else {
-      lead.textContent = '';
+      const label = document.createElement('span');
+      label.textContent = leadText;
+      label.className = 'history-run-label';
+      actionWrap.appendChild(label);
     }
+
+    lead.appendChild(actionWrap);
     tr.appendChild(lead);
 
     const cells = [
@@ -1277,13 +1358,16 @@ Identify every correctness issue, provide a corrected implementation with type h
       runs.forEach(r => {
         const rows = Array.isArray(r.runs) && r.runs.length ? r.runs : [];
         const isGrouped = rows.length > 0;
-        const groupKey = `${r.timestamp || ''}|${r.model || ''}|${r.build || ''}|${r.repeatRuns ?? rows.length ?? ''}`;
+        const groupKey = getHistoryRecordId(r) || `${r.timestamp || ''}|${r.model || ''}|${r.build || ''}|${r.repeatRuns ?? rows.length ?? ''}`;
         const collapsed = isGrouped ? (historyCollapsed[groupKey] ?? true) : false;
+        const groupRowId = getHistoryRecordId(r);
 
         const toggleButton = document.createElement('button');
         toggleButton.type = 'button';
         toggleButton.className = 'toggle-history';
-        toggleButton.textContent = isGrouped ? (collapsed ? '+' : '−') : '';
+        toggleButton.textContent = isGrouped ? (collapsed ? '▸' : '▾') : '';
+        toggleButton.title = isGrouped ? (collapsed ? 'Expand grouped runs' : 'Collapse grouped runs') : '';
+        toggleButton.setAttribute('aria-label', isGrouped ? (collapsed ? 'Expand grouped runs' : 'Collapse grouped runs') : '');
         toggleButton.setAttribute('aria-expanded', String(!collapsed));
         if (isGrouped) {
           toggleButton.addEventListener('click', () => toggleHistoryGroup(groupKey));
@@ -1291,7 +1375,8 @@ Identify every correctness issue, provide a corrected implementation with type h
 
         const groupRow = buildHistoryRow(r, {
           toggle: isGrouped ? toggleButton : null,
-          leadText: !isGrouped ? '' : ''
+          leadText: !isGrouped ? '' : '',
+          rowId: groupRowId
         });
         if (isGrouped) groupRow.classList.add('history-group-row');
         body.appendChild(groupRow);
@@ -1299,13 +1384,29 @@ Identify every correctness issue, provide a corrected implementation with type h
         if (isGrouped && !collapsed) {
           rows.forEach((run, index) => {
             const childRow = buildHistoryRow(run, {
-              leadText: `run ${index + 1}`
+              leadText: `run ${index + 1}`,
+              rowId: getHistoryRecordId(run)
             });
             childRow.classList.add('history-run-row');
             body.appendChild(childRow);
           });
         }
       });
+
+      const selectAll = $('historySelectAll');
+      if (selectAll) {
+        selectAll.checked = false;
+        selectAll.indeterminate = false;
+        selectAll.onchange = () => {
+          const boxes = document.querySelectorAll('input.history-select-box');
+          boxes.forEach(box => {
+            const rowId = box.dataset.rowId;
+            if (!rowId) return;
+            box.checked = selectAll.checked;
+            setHistorySelectionState(rowId, selectAll.checked);
+          });
+        };
+      }
   }
 
   function fmt(v) {
@@ -1347,11 +1448,34 @@ Identify every correctness issue, provide a corrected implementation with type h
     }
   }
 
+  async function deleteSelectedHistory() {
+    const keys = Array.from(historySelection);
+    if (!keys.length) {
+      $('historyMsg').textContent = 'Select one or more history entries first.';
+      return;
+    }
+    if (!confirm(`Delete ${keys.length} selected benchmark record(s)?`)) return;
+
+    try {
+      const data = await (await fetch('/api/history/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keys })
+      })).json();
+      $('historyMsg').textContent = data.message || '';
+      historySelection.clear();
+      loadHistory();
+    } catch (e) {
+      $('historyMsg').textContent = 'Failed to delete selected history.';
+    }
+  }
+
   async function clearHistory() {
     if (!confirm('Delete all saved benchmark runs?')) return;
     try {
       const data = await (await fetch('/api/history/clear', { method: 'POST' })).json();
       $('historyMsg').textContent = data.message || '';
+      historySelection.clear();
       loadHistory();
     } catch (e) {
       $('historyMsg').textContent = 'Failed to clear history.';
