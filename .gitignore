@@ -18,3 +18,4 @@ benchmark-history.json
 *.njsproj
 *.sln
 *.sw?
+*.json
