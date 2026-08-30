@@ -1,10 +1,19 @@
-# Local LLM Inference Benchmark Dashboard
+# 🚀 Local LLM Inference Benchmark Dashboard
 
 A sleek local dashboard for benchmarking `llama.cpp` models with live GPU telemetry, prompt workflows, and structured benchmark history.
 
 Built for Windows, designed for fast local model evaluation, and optimized for comparing throughput, latency, power draw, and speculative decoding behavior without leaving the browser.
 
-## Why this project
+<div align="center">
+
+![Windows](https://img.shields.io/badge/Platform-Windows-0078D6?style=for-the-badge&logo=windows)
+![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-012456?style=for-the-badge&logo=powershell)
+![llama.cpp](https://img.shields.io/badge/llama.cpp-Local%20Inference-7FD8FF?style=for-the-badge)
+![GPU](https://img.shields.io/badge/GPU-NVIDIA%20Telemetry-76B900?style=for-the-badge)
+
+</div>
+
+## 💡 Why this project
 
 This dashboard helps you answer practical questions quickly:
 
@@ -18,7 +27,7 @@ Instead of juggling multiple terminals and JSON logs, the project gives you a si
 
 ---
 
-## Highlights
+## ✨ Highlights
 
 - Discover and select local `llama.cpp` builds
 - Scan recursively for GGUF models and draft / MTP variants
@@ -33,7 +42,7 @@ Instead of juggling multiple terminals and JSON logs, the project gives you a si
 
 ---
 
-## Quick start
+## ⚡ Quick start
 
 From the project root:
 
@@ -62,7 +71,7 @@ If port 8090 is already in use, run another instance on another port:
 
 ---
 
-## Supported parameters
+## 🧩 Supported parameters
 
 | Parameter | Default | Description |
 |---|---|---|
@@ -74,7 +83,7 @@ If port 8090 is already in use, run another instance on another port:
 
 ---
 
-## Typical folder layout
+## 📁 Typical folder layout
 
 ### Builds folder
 
@@ -100,7 +109,7 @@ C:\AI\Models\
 
 ---
 
-## How to use the dashboard
+## 🖥️ How to use the dashboard
 
 1. Point the dashboard at your builds folder and click Scan.
 2. Point it at your models folder and click Scan.
@@ -129,7 +138,7 @@ The interface also includes:
 
 ---
 
-## Saved prompt templates
+## 📝 Saved prompt templates
 
 The dashboard includes a Save Template and Load Template flow.
 
@@ -139,7 +148,7 @@ The dashboard includes a Save Template and Load Template flow.
 
 ---
 
-## Benchmark history
+## 📊 Benchmark history
 
 Every completed benchmark request is appended to `benchmark-history.json` in the project root.
 
@@ -167,7 +176,7 @@ You can:
 
 ---
 
-## Live telemetry
+## 📡 Live telemetry
 
 The dashboard polls `nvidia-smi` once per second to update the live card statistics.
 
@@ -187,7 +196,7 @@ If `nvidia-smi` is missing, the dashboard still works and the GPU metrics simply
 
 ---
 
-## HTTP API
+## 🔌 HTTP API
 
 The dashboard exposes a compact JSON API for automation and scripting.
 
@@ -207,7 +216,7 @@ The dashboard exposes a compact JSON API for automation and scripting.
 
 ---
 
-## Architecture
+## 🏗️ Architecture
 
 `dashboard.ps1` uses PowerShell runspaces and a synchronized shared state hashtable so the UI stays responsive while long-running tasks execute in the background.
 
@@ -221,7 +230,7 @@ The browser polls `/api/state` and re-renders the dashboard without a frontend f
 
 ---
 
-## Batch benchmark support
+## 🧪 Batch benchmark support
 
 The project also includes a batch benchmark script for repeatable benchmarking against a running server.
 
@@ -233,7 +242,7 @@ That script sends a fixed prompt multiple times and prints averages, per-run res
 
 ---
 
-## Notes
+## 📝 Notes
 
 - This project is intentionally lightweight and local-first.
 - It is designed around PowerShell, `llama-server`, and `nvidia-smi` on Windows.
@@ -241,7 +250,9 @@ That script sends a fixed prompt multiple times and prints averages, per-run res
 
 ---
 
-## Project snapshot
+## 🌟 Project snapshot
+
+> Fast local model benchmarking for real-world GPU evaluation.
 
 This project is best used when you want a fast evaluation loop for local inference:
 
@@ -249,3 +260,11 @@ This project is best used when you want a fast evaluation loop for local inferen
 - compare draft / MTP strategies quickly
 - keep a record of your best-performing runs
 - iterate on prompts and runtime settings without leaving the dashboard
+
+### Quick product snapshot
+
+- ⚡ Real-time throughput monitoring
+- 🧠 Local benchmarking for `llama.cpp` models
+- 📈 Saved benchmark comparisons with filtered history
+- 🖥️ Browser-based control panel for server and prompt workflows
+- 🧪 Repeat-run validation for stable benchmark results
