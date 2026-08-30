@@ -407,6 +407,27 @@
   .tps-cell { color: var(--blue); font-weight: 700; }
   .scroll-x { overflow-x: auto; }
   .empty { color: var(--dim); font-size: 12px; padding: 10px 2px; }
+  .site-footer {
+    position: relative;
+    z-index: 1;
+    padding: 18px 0 8px;
+    text-align: center;
+    color: var(--dim);
+    font-size: 12px;
+    letter-spacing: 0.03em;
+    line-height: 1.6;
+  }
+  .site-footer strong {
+    color: var(--green-soft);
+    font-weight: 700;
+  }
+  .site-footer a {
+    color: var(--blue);
+    text-decoration: none;
+  }
+  .site-footer a:hover {
+    text-decoration: underline;
+  }
 </style>
 </head>
 <body>
@@ -1170,5 +1191,10 @@ Identify every correctness issue, provide a corrected implementation with type h
   loadHistory();
   setInterval(fetchState, 500);
 </script>
+
+<footer class="site-footer">
+  <div>How to create this project: point the dashboard to a local llama.cpp build, select a GGUF model, start the server, and run benchmark tests from the interface.</div>
+  <div><strong>Javier Medel</strong>, MSC - MDL AI Machine Data Labs</div>
+</footer>
 </body>
 </html>
