@@ -1,0 +1,255 @@
+# ============================================================
+# Qwen3.8-27B RTX 5090 Benchmark
+# llama.cpp / llama-server API Benchmark
+# ============================================================
+
+# -----------------------------
+# CONFIGURATION
+# -----------------------------
+
+$ServerUrl = "http://127.0.0.1:8080/v1/chat/completions"
+$Runs = 10
+$Model = "Qwen3.8-27B-UD-Q5_K_XL.gguf"
+
+# Keep this identical between configurations
+$Prompt = @"
+Review this Python function:
+
+def top_k_words(words, k):
+    counts = {}
+    for word in words:
+        counts[word] = counts.get(word, 0) + 1
+    return sorted(counts, key=counts.get, reverse=True)[:k]
+
+It should return the top K most frequent words, ordered by descending frequency and alphabetically for ties.
+
+Identify every correctness issue, provide a corrected implementation with type hints and a docstring, explain time and space complexity, and provide 3 test cases including a frequency tie.
+"@
+
+# -----------------------------
+# REQUEST BODY
+# -----------------------------
+
+$Body = @{
+    model = $Model
+
+    messages = @(
+        @{
+            role = "system"
+            content = "You are an expert Python engineer. Be precise, skeptical, and concise."
+        },
+        @{
+            role = "user"
+            content = $Prompt
+        }
+    )
+
+    max_tokens = 1500
+    temperature = 0.2
+
+} | ConvertTo-Json -Depth 10
+
+
+# -----------------------------
+# INITIALIZE RESULTS
+# -----------------------------
+
+$Results = @()
+
+Write-Host ""
+Write-Host "============================================================"
+Write-Host "QWEN3.8-27B BENCHMARK"
+Write-Host "============================================================"
+Write-Host "Server: $ServerUrl"
+Write-Host "Model:  $Model"
+Write-Host "Runs:   $Runs"
+Write-Host ""
+Write-Host "Starting benchmark..."
+Write-Host ""
+
+
+# ============================================================
+# RUN BENCHMARK
+# ============================================================
+
+for ($i = 1; $i -le $Runs; $i++) {
+
+    Write-Host "Running test $i of $Runs..."
+
+    try {
+
+        $Response = Invoke-RestMethod `
+            -Uri $ServerUrl `
+            -Method Post `
+            -ContentType "application/json" `
+            -Body $Body
+
+    }
+    catch {
+
+        Write-Host "ERROR: Server request failed."
+        Write-Host $_
+
+        break
+    }
+
+
+    $t = $Response.timings
+
+
+    # -----------------------------
+    # MTP ACCEPTANCE
+    # -----------------------------
+
+    $Acceptance = 0
+
+    if ($null -ne $t.draft_n -and $t.draft_n -gt 0) {
+
+        $Acceptance = ($t.draft_n_accepted / $t.draft_n) * 100
+    }
+
+
+    # -----------------------------
+    # STORE RESULT
+    # -----------------------------
+
+    $Result = [PSCustomObject]@{
+
+        Run = $i
+
+        TPS = [math]::Round(
+            $t.predicted_per_second,
+            2
+        )
+
+        PredictedTokens = $t.predicted_n
+
+        PredictedMs = [math]::Round(
+            $t.predicted_ms,
+            2
+        )
+
+        MsPerToken = [math]::Round(
+            $t.predicted_per_token_ms,
+            2
+        )
+
+        PromptTokens = $t.prompt_n
+
+        PromptMs = [math]::Round(
+            $t.prompt_ms,
+            2
+        )
+
+        PromptTPS = [math]::Round(
+            $t.prompt_per_second,
+            2
+        )
+
+        CacheTokens = $t.cache_n
+
+        DraftTokens = $t.draft_n
+
+        AcceptedDraft = $t.draft_n_accepted
+
+        AcceptancePct = [math]::Round(
+            $Acceptance,
+            2
+        )
+    }
+
+
+    $Results += $Result
+
+
+    # -----------------------------
+    # DISPLAY RUN RESULT
+    # -----------------------------
+
+    Write-Host (
+        "Run {0}: {1} tok/s | Generation: {2} ms | MTP Acceptance: {3}%" -f `
+        $Result.Run, `
+        $Result.TPS, `
+        $Result.PredictedMs, `
+        $Result.AcceptancePct
+    )
+
+    Write-Host ""
+}
+
+
+# ============================================================
+# DETAILED RESULTS
+# ============================================================
+
+Write-Host ""
+Write-Host "============================================================"
+Write-Host "DETAILED RESULTS"
+Write-Host "============================================================"
+Write-Host ""
+
+$Results | Format-Table -AutoSize
+
+
+# ============================================================
+# SUMMARY
+# ============================================================
+
+if ($Results.Count -gt 0) {
+
+    $AverageTPS = ($Results.TPS | Measure-Object -Average).Average
+
+    $MinimumTPS = ($Results.TPS | Measure-Object -Minimum).Minimum
+
+    $MaximumTPS = ($Results.TPS | Measure-Object -Maximum).Maximum
+
+    $AverageAcceptance = (
+        $Results.AcceptancePct |
+        Measure-Object -Average
+    ).Average
+
+    $AverageMsPerToken = (
+        $Results.MsPerToken |
+        Measure-Object -Average
+    ).Average
+
+    $AveragePromptTPS = (
+        $Results.PromptTPS |
+        Measure-Object -Average
+    ).Average
+
+
+    Write-Host ""
+    Write-Host "============================================================"
+    Write-Host "BENCHMARK SUMMARY"
+    Write-Host "============================================================"
+    Write-Host ""
+
+    Write-Host "Average TPS: $([math]::Round($AverageTPS, 2)) tok/s"
+
+    Write-Host "Minimum TPS: $([math]::Round($MinimumTPS, 2)) tok/s"
+
+    Write-Host "Maximum TPS: $([math]::Round($MaximumTPS, 2)) tok/s"
+
+    Write-Host ""
+
+    Write-Host "Average ms/token: $([math]::Round($AverageMsPerToken, 2)) ms"
+
+    Write-Host "Average Prompt TPS: $([math]::Round($AveragePromptTPS, 2)) tok/s"
+
+    Write-Host "Average MTP Acceptance: $([math]::Round($AverageAcceptance, 2))%"
+
+}
+
+else {
+
+    Write-Host ""
+    Write-Host "No benchmark results were collected."
+
+}
+
+
+Write-Host ""
+Write-Host "============================================================"
+Write-Host "BENCHMARK COMPLETE"
+Write-Host "============================================================"

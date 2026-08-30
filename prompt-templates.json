@@ -1,0 +1,5 @@
+﻿{
+    "name":  "python-review-template",
+    "prompt":  "Review this Python function:\n\n    counts = {}\n    for word in words:\n        counts[word] = counts.get(word, 0) + 1\n    return sorted(counts, key=counts.get, reverse=True)[:k]\n\nIt should return the top K most frequent words, ordered by descending frequency and alphabetically for ties.\n\nIdentify every correctness issue, provide a corrected implementation with type hints and a docstring, explain time and space complexity, and provide 3 test cases including a frequency tie.",
+    "updatedAt":  "2026-08-29T14:52:31.5363752-04:00"
+}

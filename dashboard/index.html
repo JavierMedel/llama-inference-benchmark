@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Local LLM Inference Benchmark</title>
+<style>
+  :root {
+    --bg: #050b12;
+    --bg-2: #0c1721;
+    --panel-bg: rgba(10, 17, 24, 0.84);
+    --panel-elevated: rgba(15, 25, 34, 0.95);
+    --border: rgba(123, 170, 255, 0.22);
+    --green: #76b900;
+    --green-soft: #8fe36b;
+    --green-dim: rgba(118, 185, 0, 0.18);
+    --text: #edf6ff;
+    --dim: #9aa9ba;
+    --blue: #7fd8ff;
+    --cyan: #7fe2d8;
+    --amber: #f6bf4b;
+    --danger: #ff6363;
+    --shadow: rgba(6, 12, 16, 0.75);
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    position: relative;
+    background:
+      radial-gradient(circle at top, rgba(118, 185, 0, 0.17), transparent 28%),
+      radial-gradient(circle at bottom right, rgba(127, 216, 255, 0.12), transparent 30%),
+      linear-gradient(140deg, var(--bg) 0%, var(--bg-2) 100%);
+    color: var(--text);
+    font-family: "Segoe UI", "Inter", "Cascadia Code", "Consolas", monospace;
+    margin: 0;
+    padding: 24px 32px 60px;
+    min-height: 100vh;
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 28px 28px;
+    pointer-events: none;
+    opacity: 0.55;
+  }
+
+  h1 {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+    letter-spacing: 0.18em;
+    font-size: 29px;
+    margin: 8px 0 2px;
+    font-weight: 800;
+    text-transform: uppercase;
+    text-shadow: 0 0 18px rgba(118, 185, 0, 0.35);
+  }
+
+  .subtitle {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+    color: var(--dim);
+    font-size: 13px;
+    margin-bottom: 24px;
+    letter-spacing: 0.08em;
+    text-transform: lowercase;
+  }
+
+  .card {
+    position: relative;
+    z-index: 1;
+    background: linear-gradient(180deg, rgba(17, 25, 35, 0.95), rgba(10, 15, 21, 0.92));
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--green);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 18px;
+    box-shadow: 0 18px 35px var(--shadow), inset 0 1px 0 rgba(255,255,255,0.04);
+    backdrop-filter: blur(10px);
+  }
+
+  .card-title {
+    color: var(--green-soft);
+    font-size: 12px;
+    margin-bottom: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+
+  .big-number { font-size: 56px; font-weight: 700; line-height: 1; }
+  .big-number .unit { font-size: 20px; color: var(--dim); margin-left: 6px; }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    color: var(--dim);
+    padding: 6px 0;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+  .row span.val { color: var(--text); font-weight: 600; }
+
+  .vram-bar-wrap { margin: 18px 0; }
+  .vram-bar {
+    height: 28px;
+    background: rgba(13, 21, 28, 0.9);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+    box-shadow: inset 0 0 18px rgba(0,0,0,0.45);
+  }
+  .vram-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--green) 0%, var(--cyan) 100%);
+    width: 0%;
+    transition: width 0.4s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #06120d;
+    font-weight: 800;
+    font-size: 12px;
+    white-space: nowrap;
+    text-shadow: 0 0 10px rgba(255,255,255,0.25);
+  }
+  .vram-caption { text-align: center; color: var(--dim); font-size: 12px; margin-top: 8px; }
+
+  .tps-wrap { position: relative; z-index: 1; text-align: center; margin: 10px 0 24px; }
+  .gpu-name-over-tps {
+    color: var(--green-soft);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 700;
+    margin-bottom: 8px;
+    text-shadow: 0 0 18px rgba(118, 185, 0, 0.25);
+  }
+  .tps-number { font-size: 72px; font-weight: 800; color: var(--blue); line-height: 1; text-shadow: 0 0 20px rgba(127, 216, 255, 0.35); }
+  .tps-label { color: var(--dim); font-size: 13px; margin-top: 6px; }
+
+  .status-pill {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    margin-left: 10px;
+    vertical-align: middle;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    border: 1px solid rgba(255,255,255,0.08);
+    font-weight: 700;
+  }
+  .status-idle, .status-stopped {
+    background: rgba(255,255,255,0.04);
+    color: var(--dim);
+  }
+  .status-generating, .status-starting, .status-running, .status-done {
+    background: rgba(118, 185, 0, 0.2);
+    color: #d9ffd0;
+    box-shadow: 0 0 18px rgba(118, 185, 0, 0.15);
+  }
+  .status-error { background: rgba(255, 99, 99, 0.15); color: #ffd7d7; }
+
+  .field-row { margin-bottom: 10px; }
+  .field-row label {
+    display: block;
+    color: var(--dim);
+    font-size: 12px;
+    margin-bottom: 4px;
+    letter-spacing: 0.04em;
+  }
+  .field-inline { display: flex; gap: 8px; }
+  .field-inline .text-input { flex: 1; }
+  .field-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px 16px;
+    margin-top: 4px;
+  }
+  .text-input {
+    width: 100%;
+    background: rgba(8, 12, 18, 0.9);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-family: inherit;
+    font-size: 13px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .text-input:focus {
+    outline: none;
+    border-color: rgba(127, 216, 255, 0.6);
+    box-shadow: 0 0 0 3px rgba(127, 216, 255, 0.15);
+  }
+  select.text-input { cursor: pointer; }
+
+  .controls { display: flex; gap: 10px; margin-top: 14px; align-items: center; flex-wrap: wrap; }
+  .startup-status {
+    display: none;
+    margin-top: 14px;
+    color: var(--dim);
+    font-size: 12px;
+  }
+  .startup-status.active { display: block; }
+  .startup-status.ready { color: var(--green-soft); }
+  .startup-progress {
+    height: 7px;
+    margin-top: 6px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .startup-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--green) 0%, var(--cyan) 100%);
+    box-shadow: 0 0 18px rgba(118, 185, 0, 0.35);
+    transition: width 0.25s ease;
+  }
+  button {
+    background: linear-gradient(180deg, rgba(122, 190, 0, 0.3), rgba(78, 120, 0, 0.2));
+    color: #f3ffe8;
+    border: 1px solid rgba(118, 185, 0, 0.9);
+    padding: 9px 18px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    box-shadow: 0 10px 20px rgba(118, 185, 0, 0.15);
+    transition: transform 0.12s ease, filter 0.12s ease, box-shadow 0.12s ease;
+  }
+  button:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+  button:hover:not(:disabled) {
+    transform: translateY(-1px);
+    filter: brightness(1.08);
+    box-shadow: 0 12px 20px rgba(118, 185, 0, 0.2);
+  }
+  button.secondary {
+    background: rgba(255,255,255,0.02);
+    border-color: var(--border);
+    color: var(--dim);
+    box-shadow: none;
+  }
+  button.secondary:hover:not(:disabled) { background: rgba(255,255,255,0.04); color: var(--text); }
+  button.danger {
+    background: linear-gradient(180deg, rgba(255, 99, 99, 0.18), rgba(120, 0, 0, 0.2));
+    border-color: rgba(255, 99, 99, 0.7);
+    color: #ffd7d7;
+  }
+  button.danger:hover:not(:disabled) {
+    background: linear-gradient(180deg, rgba(255, 99, 99, 0.26), rgba(120, 0, 0, 0.2));
+    color: #fff0f0;
+  }
+
+  .prompt-box {
+    width: 100%;
+    background: rgba(8,12,18,0.9);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 12px;
+    font-family: inherit;
+    font-size: 13px;
+    resize: vertical;
+    min-height: 90px;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+  }
+  .output-panel {
+    position: relative;
+  }
+  .output-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .copy-output {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    cursor: pointer;
+    padding: 0;
+    font-size: 15px;
+    line-height: 1;
+  }
+  .copy-output:hover:not(:disabled) {
+    background: rgba(255,255,255,0.05);
+  }
+  .copy-output svg {
+    width: 15px;
+    height: 15px;
+    fill: currentColor;
+  }
+  .output {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 14px 16px;
+    background: rgba(7, 11, 17, 0.94);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    min-height: 160px;
+    max-height: 480px;
+    overflow-y: auto;
+    box-shadow: inset 0 0 16px rgba(0,0,0,0.45);
+  }
+  .meta-line {
+    color: var(--dim);
+    font-size: 12px;
+    margin-top: 6px;
+    word-break: break-all;
+  }
+  .meta-line.cmd { color: #a0b8d8; }
+  .meta-line.err { color: #ffb3b3; }
+
+  table.history {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  table.history th {
+    text-align: left;
+    color: var(--dim);
+    font-weight: 600;
+    padding: 8px 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    letter-spacing: 0.04em;
+  }
+  table.history th:hover { color: var(--text); }
+  table.history th.sort-active { color: var(--green-soft); }
+  table.history td {
+    padding: 7px 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    white-space: nowrap;
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+  }
+  table.history td.num { text-align: right; }
+  table.history tbody tr {
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+  }
+  table.history tbody tr:hover {
+    background: linear-gradient(90deg, rgba(118, 185, 0, 0.12), rgba(127, 216, 255, 0.08));
+    box-shadow: inset 0 0 0 1px rgba(127, 216, 255, 0.12);
+  }
+  table.history tbody tr:hover td {
+    background: transparent;
+  }
+  .tps-cell { color: var(--blue); font-weight: 700; }
+  .scroll-x { overflow-x: auto; }
+  .empty { color: var(--dim); font-size: 12px; padding: 10px 2px; }
+</style>
+</head>
+<body>
+
+  <h1 id="pageTitle">LOCAL LLM BENCHMARK</h1>
+  <div class="subtitle" id="subtitle">live inference dashboard</div>
+
+  <!-- ================= SERVER CONFIG ================= -->
+  <div class="card">
+    <div class="card-title">
+      LLAMA.CPP BUILD &amp; MODEL
+      <span class="status-pill status-stopped" id="serverStatusPill">stopped</span>
+    </div>
+
+    <div class="field-row">
+      <label>llama.cpp builds folder</label>
+      <div class="field-inline">
+        <input type="text" id="buildsDir" class="text-input"
+               placeholder="C:\Users\alien51\Documents\Llama-Server" />
+        <button class="secondary" onclick="scanBuilds()">Scan</button>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <label>llama.cpp build / version</label>
+      <select id="buildSelect" class="text-input"></select>
+    </div>
+
+    <div class="field-row">
+      <label>models folder</label>
+      <div class="field-inline">
+        <input type="text" id="modelsDir" class="text-input" placeholder="C:\AI\Models" />
+        <button class="secondary" onclick="scanModels()">Scan</button>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <label>model (.gguf)</label>
+      <select id="modelSelect" class="text-input"></select>
+    </div>
+
+    <div class="field-row">
+      <label>draft / MTP model (optional)</label>
+      <select id="draftSelect" class="text-input"></select>
+    </div>
+
+    <div class="field-grid">
+      <div class="field-row">
+        <label>context size (-c)</label>
+        <select id="contextSize" class="text-input">
+          <option value="8192" selected>8192 (8K)</option>
+          <option value="16384">16,384 (16K)</option>
+          <option value="32768">32,768 (32K)</option>
+          <option value="65536">65,536 (64K)</option>
+          <option value="131072">131,072 (132K)</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label>gpu layers (-ngl)</label>
+        <input type="number" id="gpuLayers" class="text-input" value="999" />
+      </div>
+      <div class="field-row">
+        <label>spec type</label>
+        <select id="specType" class="text-input">
+          <option value="draft-mtp" selected>draft-mtp</option>
+          <option value="draft">draft</option>
+          <option value="none">none</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label>spec draft n-max</label>
+        <input type="number" id="specDraftNMax" class="text-input" value="4" />
+      </div>
+      <div class="field-row">
+        <label>reasoning effort</label>
+        <select id="reasoningEffort" class="text-input">
+          <option value="low">low</option>
+          <option value="medium" selected>medium</option>
+          <option value="high">high</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label>host</label>
+        <input type="text" id="llamaHost" class="text-input" value="127.0.0.1" />
+      </div>
+      <div class="field-row">
+        <label>port</label>
+        <input type="number" id="llamaPort" class="text-input" value="8080" />
+      </div>
+      <div class="field-row" style="grid-column: span 2;">
+        <label>extra args (optional)</label>
+        <input type="text" id="extraArgs" class="text-input" placeholder="--flash-attn --no-mmap" />
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="startServerBtn" onclick="startServer()">Start Server</button>
+      <button id="stopServerBtn" class="secondary" onclick="stopServer()">Stop Server</button>
+      <button id="offloadGpuBtn" class="danger" onclick="offloadGpu()">Offload GPU</button>
+      <span class="meta-line" id="serverMsg"></span>
+    </div>
+    <div class="startup-status" id="startupStatus">
+      <span id="startupStatusText">Starting Server</span>
+      <div class="startup-progress"><div class="startup-progress-fill" id="startupProgressFill"></div></div>
+    </div>
+
+    <div class="meta-line" id="serverInfoLine"></div>
+    <div class="meta-line cmd" id="serverArgsLine"></div>
+    <div class="meta-line err" id="serverErrLine"></div>
+  </div>
+
+  <!-- ================= LIVE TPS ================= -->
+  <div class="tps-wrap">
+    <div class="gpu-name-over-tps" id="gpuName">NVIDIA GPU</div>
+    <div class="tps-number" id="tps">0.0</div>
+    <div class="tps-label">tokens / sec<span class="status-pill status-idle" id="statusPill">idle</span></div>
+    <div class="meta-line" id="metaLine"></div>
+  </div>
+
+  <!-- ================= GPU ================= -->
+  <div class="card">
+    <div class="big-number"><span id="power">--</span><span class="unit">W</span></div>
+    <div class="row"><span>utilization</span><span class="val" id="util">-- %</span></div>
+    <div class="row"><span>VRAM</span><span class="val" id="vramText">-- / -- GB</span></div>
+    <div class="row"><span>temp</span><span class="val" id="temp">-- &deg;C</span></div>
+    <div class="row"><span>clocks (sm / mem)</span><span class="val" id="clocks">-- / -- MHz</span></div>
+    <div class="row"><span>p-state</span><span class="val" id="pstate">--</span></div>
+  </div>
+
+  <div class="vram-bar-wrap">
+    <div class="vram-bar"><div class="vram-fill" id="vramFill">0 GB</div></div>
+    <div class="vram-caption" id="vramCaption">-- GB used of -- GB VRAM</div>
+  </div>
+
+  <!-- ================= PROMPT ================= -->
+  <div class="card">
+    <div class="card-title">PROMPT</div>
+    <textarea class="prompt-box" id="promptInput" placeholder="Enter a prompt to benchmark...">Review this Python function:
+
+    counts = {}
+    for word in words:
+        counts[word] = counts.get(word, 0) + 1
+    return sorted(counts, key=counts.get, reverse=True)[:k]
+
+It should return the top K most frequent words, ordered by descending frequency and alphabetically for ties.
+
+Identify every correctness issue, provide a corrected implementation with type hints and a docstring, explain time and space complexity, and provide 3 test cases including a frequency tie.
+</textarea>
+
+    <div class="field-grid">
+      <div class="field-row">
+        <label>max tokens</label>
+        <input type="number" id="maxTokens" class="text-input" value="1500" />
+      </div>
+      <div class="field-row">
+        <label>temperature</label>
+        <input type="number" id="temperature" class="text-input" value="0.2" step="0.05" />
+      </div>
+      <div class="field-row">
+        <label>repeat runs</label>
+        <input type="number" id="repeatRuns" class="text-input" value="1" min="1" max="50" />
+      </div>
+    </div>
+
+    <div class="field-grid" style="margin-top: 8px;">
+      <div class="field-row" style="grid-column: span 2;">
+        <label>template name</label>
+        <input type="text" id="templateName" class="text-input" value="python-review-template" placeholder="python-review-template" />
+      </div>
+      <div class="field-row" style="grid-column: span 2;">
+        <label>saved templates</label>
+        <select id="templateSelect" class="text-input">
+          <option value="">(select a saved template)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="saveTemplateBtn" class="secondary" onclick="saveTemplate()">Save Template</button>
+      <button id="loadTemplateBtn" class="secondary" onclick="loadSelectedTemplate()">Load Template</button>
+      <button id="runBtn" onclick="submitPrompt()">Run Prompt</button>
+      <span class="meta-line" id="runMsg"></span>
+    </div>
+  </div>
+
+  <!-- ================= OUTPUT ================= -->
+  <div class="card output-panel">
+    <div class="output-header">
+      <div class="card-title" style="margin-bottom:0;">OUTPUT</div>
+      <button class="copy-output" type="button" onclick="copyOutput()" aria-label="Copy output" title="Copy output">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/>
+        </svg>
+      </button>
+    </div>
+    <div class="output" id="output"></div>
+  </div>
+
+  <!-- ================= HISTORY ================= -->
+  <div class="card">
+    <div class="card-title">BENCHMARK HISTORY</div>
+    <div class="scroll-x">
+      <table class="history">
+        <thead>
+          <tr>
+            <th data-sort="timestamp" onclick="sortHistory('timestamp')">time</th>
+            <th data-sort="build" onclick="sortHistory('build')">build</th>
+            <th data-sort="model" onclick="sortHistory('model')">model</th>
+            <th data-sort="draftModel" onclick="sortHistory('draftModel')">draft</th>
+            <th class="num" data-sort="contextSize" onclick="sortHistory('contextSize')">ctx</th>
+            <th class="num" data-sort="gpuLayers" onclick="sortHistory('gpuLayers')">ngl</th>
+            <th data-sort="specType" onclick="sortHistory('specType')">spec</th>
+            <th class="num" data-sort="specDraftNMax" onclick="sortHistory('specDraftNMax')">n-max</th>
+            <th data-sort="reasoningEffort" onclick="sortHistory('reasoningEffort')">reasoning</th>
+            <th class="num" data-sort="repeatRuns" onclick="sortHistory('repeatRuns')">runs avg</th>
+            <th class="num" data-sort="tps" onclick="sortHistory('tps')">tok/s</th>
+            <th class="num" data-sort="tokens" onclick="sortHistory('tokens')">tokens</th>
+            <th class="num" data-sort="promptTps" onclick="sortHistory('promptTps')">prompt t/s</th>
+            <th class="num" data-sort="acceptancePct" onclick="sortHistory('acceptancePct')">accept %</th>
+            <th class="num" data-sort="ttftSec" onclick="sortHistory('ttftSec')">ttft s</th>
+            <th class="num" data-sort="peakPowerW" onclick="sortHistory('peakPowerW')">power W</th>
+            <th class="num" data-sort="peakTempC" onclick="sortHistory('peakTempC')">temp C</th>
+          </tr>
+        </thead>
+        <tbody id="historyBody"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="historyEmpty">No benchmark runs recorded yet.</div>
+    <div class="controls">
+      <button class="secondary" onclick="loadHistory()">Refresh</button>
+      <button class="secondary" onclick="downloadHistoryFile()">Download History</button>
+      <button class="secondary" onclick="clearHistory()">Delete History</button>
+      <span class="meta-line" id="historyMsg"></span>
+    </div>
+  </div>
+
+<script>
+  let lastGenStatus = null;
+  let allModels = [];
+  let historyRuns = [];
+  let historySortKey = 'timestamp';
+  let historySortDirection = 'desc';
+  let serverStartAt = null;
+  const serverStartupWaitMs = 7000;
+
+  const $ = id => document.getElementById(id);
+
+  // ---------- live state polling ----------
+
+  async function fetchState() {
+    try {
+      const res = await fetch('/api/state');
+      render(await res.json());
+    } catch (e) { /* transient */ }
+  }
+
+  function render(data) {
+    const gpu = data.gpu || {};
+    const gen = data.gen || {};
+    const server = data.server || {};
+
+    // GPU
+    $('gpuName').textContent = gpu.name || 'NVIDIA GPU';
+    if (gpu.name && gpu.name !== 'NVIDIA GPU') {
+      $('pageTitle').textContent = gpu.name.toUpperCase();
+    }
+    $('subtitle').textContent = server.model
+      ? `${server.model}${server.build ? ' · ' + server.build : ''}`
+      : 'live inference dashboard';
+
+    $('power').textContent = gpu.power ?? '--';
+    $('util').textContent = (gpu.util ?? '--') + ' %';
+    $('temp').innerHTML = (gpu.temp ?? '--') + ' &deg;C';
+    $('clocks').textContent = (gpu.clockSm ?? '--') + ' / ' + (gpu.clockMem ?? '--') + ' MHz';
+    $('pstate').textContent = gpu.pstate || '--';
+
+    const used = gpu.memUsedGB ?? 0, total = gpu.memTotalGB ?? 0;
+    $('vramText').textContent = used.toFixed(1) + ' / ' + total.toFixed(1) + ' GB';
+    const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
+    $('vramFill').style.width = pct.toFixed(1) + '%';
+    $('vramFill').textContent = used.toFixed(1) + ' GB';
+    $('vramCaption').textContent =
+      used.toFixed(1) + ' GB used of ' + total.toFixed(1) + ' GB VRAM';
+
+    // generation
+    $('tps').textContent = (gen.tps ?? 0).toFixed(1);
+    const pill = $('statusPill');
+    pill.textContent = gen.status || 'idle';
+    pill.className = 'status-pill status-' + (gen.status || 'idle');
+
+    const bits = [];
+    if (gen.message) bits.push(gen.message);
+    if (gen.tokens) bits.push(`${gen.tokens} tokens`);
+    if (gen.elapsedSec) bits.push(`${gen.elapsedSec}s elapsed`);
+    if (gen.ttftSec) bits.push(`${gen.ttftSec}s to first token`);
+    if (gen.promptTps) bits.push(`prompt ${gen.promptTps} t/s`);
+    if (gen.runIndex && gen.totalRuns) bits.push(`run ${gen.runIndex}/${gen.totalRuns}`);
+    $('metaLine').textContent = bits.join('  ·  ');
+
+    const out = $('output');
+    out.textContent = gen.text || '';
+    out.scrollTop = out.scrollHeight;
+
+    if (server.status === 'starting' && serverStartAt === null) {
+      serverStartAt = Date.now();
+    }
+    if (server.status === 'error') {
+      serverStartAt = null;
+    }
+
+    const startupElapsed = serverStartAt === null ? serverStartupWaitMs : Date.now() - serverStartAt;
+    const serverReady = server.status === 'running' && startupElapsed >= serverStartupWaitMs;
+    const startupVisible = server.status === 'starting' ||
+      (server.status === 'running' && !serverReady);
+    if (serverStartAt !== null && !serverReady) {
+      $('tps').textContent = '0.0';
+    }
+    const startupStatus = $('startupStatus');
+    const startupFill = $('startupProgressFill');
+    startupStatus.className = 'startup-status' + (startupVisible || serverReady ? ' active' : '') +
+      (serverReady ? ' ready' : '');
+    $('startupStatusText').textContent = serverReady ? 'Server Ready' : 'Starting Server';
+    startupFill.style.width = (serverReady ? 100 : Math.min(100,
+      (startupElapsed / serverStartupWaitMs) * 100)).toFixed(1) + '%';
+
+    $('runBtn').disabled = gen.status === 'generating' || !serverReady;
+
+    // auto-refresh history when a run finishes
+    if (lastGenStatus === 'generating' && gen.status === 'done') loadHistory();
+    lastGenStatus = gen.status;
+
+    // server
+    const sPill = $('serverStatusPill');
+    sPill.textContent = server.status || 'stopped';
+    sPill.className = 'status-pill status-' + (server.status || 'stopped');
+
+    const info = [];
+    if (server.pid) info.push(`PID ${server.pid}`);
+    if (server.serverUrl) info.push(server.serverUrl);
+    if (server.draftModel) info.push(`draft: ${server.draftModel}`);
+    if (server.reasoningEffort) info.push(`reasoning effort: ${server.reasoningEffort}`);
+    $('serverInfoLine').textContent = info.join('  ·  ');
+    $('serverArgsLine').textContent = server.args || '';
+    $('serverErrLine').textContent = server.error || '';
+
+    const busy = server.status === 'running' || server.status === 'starting';
+    $('startServerBtn').disabled = busy;
+    $('stopServerBtn').disabled = !busy;
+  }
+
+  // ---------- discovery ----------
+
+  async function scanBuilds() {
+    const dir = $('buildsDir').value.trim();
+    const url = dir ? `/api/builds?dir=${encodeURIComponent(dir)}` : '/api/builds';
+    try {
+      const data = await (await fetch(url)).json();
+      if (data.dir && !dir) $('buildsDir').value = data.dir;
+
+      const sel = $('buildSelect');
+      sel.innerHTML = '';
+      if (!data.builds || !data.builds.length) {
+        sel.appendChild(opt('', 'No llama-server.exe found in this folder', true));
+        return;
+      }
+      data.builds.forEach(b =>
+        sel.appendChild(opt(b.path, b.version ? `${b.name}  (v${b.version})` : b.name)));
+    } catch (e) {
+      $('serverMsg').textContent = 'Failed to scan builds folder.';
+    }
+  }
+
+  async function scanModels() {
+    const dir = $('modelsDir').value.trim();
+    const url = dir ? `/api/models?dir=${encodeURIComponent(dir)}` : '/api/models';
+    try {
+      const data = await (await fetch(url)).json();
+      if (data.dir && !dir) $('modelsDir').value = data.dir;
+
+      allModels = data.models || [];
+      const mSel = $('modelSelect');
+      const dSel = $('draftSelect');
+      mSel.innerHTML = '';
+      dSel.innerHTML = '';
+      dSel.appendChild(opt('', '(none)'));
+
+      if (!allModels.length) {
+        mSel.appendChild(opt('', 'No .gguf models found in this folder', true));
+        return;
+      }
+
+      allModels.forEach(m => {
+        const label = `${m.relative}  (${m.sizeGB} GB)`;
+        if (m.isDraft) dSel.appendChild(opt(m.path, label));
+        else mSel.appendChild(opt(m.path, label));
+      });
+
+      allModels.filter(m => !m.isDraft).forEach(m =>
+        dSel.appendChild(opt(m.path, `${m.relative}  (${m.sizeGB} GB)`)));
+
+      if (!mSel.options.length) {
+        allModels.forEach(m =>
+          mSel.appendChild(opt(m.path, `${m.relative}  (${m.sizeGB} GB)`)));
+      }
+    } catch (e) {
+      $('serverMsg').textContent = 'Failed to scan models folder.';
+    }
+  }
+
+  function opt(value, text, disabled) {
+    const o = document.createElement('option');
+    o.value = value;
+    o.textContent = text;
+    if (disabled) o.disabled = true;
+    return o;
+  }
+
+  // ---------- server control ----------
+
+  async function startServer() {
+    const buildPath = $('buildSelect').value;
+    const modelPath = $('modelSelect').value;
+
+    if (!buildPath) { $('serverMsg').textContent = 'Select a llama.cpp build first.'; return; }
+    if (!modelPath) { $('serverMsg').textContent = 'Select a model first.'; return; }
+
+    const payload = {
+      buildPath,
+      modelPath,
+      draftModelPath: $('draftSelect').value || null,
+      contextSize: Number($('contextSize').value),
+      gpuLayers: Number($('gpuLayers').value),
+      specType: $('specType').value,
+      specDraftNMax: Number($('specDraftNMax').value),
+      reasoningEffort: $('reasoningEffort').value,
+      extraArgs: $('extraArgs').value.trim(),
+      host: $('llamaHost').value.trim(),
+      port: Number($('llamaPort').value)
+    };
+
+    $('serverMsg').textContent = 'Starting...';
+  $('tps').textContent = '0.0';
+  $('metaLine').textContent = '';
+    serverStartAt = Date.now();
+    try {
+      const data = await (await fetch('/api/server/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })).json();
+      if (!data.ok) serverStartAt = null;
+      $('serverMsg').textContent = data.message || '';
+    } catch (e) {
+      serverStartAt = null;
+      $('serverMsg').textContent = 'Failed to start server.';
+    }
+  }
+
+  async function stopServer() {
+    $('serverMsg').textContent = 'Stopping...';
+    serverStartAt = null;
+    try {
+      const data = await (await fetch('/api/server/stop', { method: 'POST' })).json();
+      $('serverMsg').textContent = data.message || '';
+    } catch (e) {
+      $('serverMsg').textContent = 'Failed to stop server.';
+    }
+  }
+
+  async function offloadGpu() {
+    $('serverMsg').textContent = 'Offloading GPU memory...';
+    try {
+      const data = await (await fetch('/api/gpu/offload', { method: 'POST' })).json();
+      $('serverMsg').textContent = data.message || 'GPU offload complete.';
+    } catch (e) {
+      $('serverMsg').textContent = 'Failed to offload GPU.';
+    }
+  }
+
+  // ---------- prompt ----------
+
+  async function submitPrompt() {
+    const prompt = $('promptInput').value.trim();
+    if (!prompt) { $('runMsg').textContent = 'Enter a prompt first.'; return; }
+
+    const repeatRuns = Number($('repeatRuns').value || 1);
+    const safeRepeatRuns = Number.isFinite(repeatRuns) && repeatRuns > 0 ? Math.min(50, repeatRuns) : 1;
+    $('repeatRuns').value = safeRepeatRuns;
+
+    $('runMsg').textContent = 'Submitting...';
+    try {
+      const data = await (await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt,
+          maxTokens: Number($('maxTokens').value),
+          temperature: Number($('temperature').value),
+          repeatRuns: safeRepeatRuns
+        })
+      })).json();
+      $('runMsg').textContent = data.message || '';
+    } catch (e) {
+      $('runMsg').textContent = 'Failed to submit prompt.';
+    }
+  }
+
+  async function saveTemplate() {
+    const name = $('templateName').value.trim();
+    const prompt = $('promptInput').value.trim();
+    if (!name) { $('runMsg').textContent = 'Enter a template name first.'; return; }
+    if (!prompt) { $('runMsg').textContent = 'Prompt text is empty.'; return; }
+
+    try {
+      const data = await (await fetch('/api/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, prompt })
+      })).json();
+      $('runMsg').textContent = data.message || 'Template saved.';
+      await loadTemplates();
+      $('templateSelect').value = name;
+    } catch (e) {
+      $('runMsg').textContent = 'Failed to save template.';
+    }
+  }
+
+  async function loadSelectedTemplate() {
+    const name = $('templateSelect').value;
+    if (!name) { $('runMsg').textContent = 'Select a saved template first.'; return; }
+    try {
+      const data = await (await fetch(`/api/templates?name=${encodeURIComponent(name)}`)).json();
+      if (data && data.template) {
+        $('promptInput').value = data.template.prompt || '';
+        $('templateName').value = data.template.name || name;
+        $('runMsg').textContent = `Loaded template: ${data.template.name}`;
+      }
+    } catch (e) {
+      $('runMsg').textContent = 'Failed to load template.';
+    }
+  }
+
+  async function loadTemplates() {
+    try {
+      const data = await (await fetch('/api/templates')).json();
+      const templates = data.templates || [];
+      const select = $('templateSelect');
+      const current = select.value;
+      select.innerHTML = '<option value="">(select a saved template)</option>';
+      templates.forEach(t => {
+        const option = document.createElement('option');
+        option.value = t.name;
+        option.textContent = t.name;
+        if (current && t.name === current) option.selected = true;
+        select.appendChild(option);
+      });
+    } catch (e) {
+      $('templateSelect').innerHTML = '<option value="">(select a saved template)</option>';
+    }
+  }
+
+  // ---------- history ----------
+
+  async function loadHistory() {
+    try {
+      const data = await (await fetch('/api/history')).json();
+      historyRuns = data.runs || [];
+      renderHistory();
+    } catch (e) {
+      $('historyMsg').textContent = 'Failed to load history.';
+    }
+  }
+
+  function sortHistory(key) {
+    if (historySortKey === key) {
+      historySortDirection = historySortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      historySortKey = key;
+      historySortDirection = 'asc';
+    }
+    renderHistory();
+  }
+
+  function renderHistory() {
+      const runs = historyRuns.slice().sort((left, right) => {
+        const leftValue = left[historySortKey];
+        const rightValue = right[historySortKey];
+        const leftMissing = leftValue == null || leftValue === '';
+        const rightMissing = rightValue == null || rightValue === '';
+        if (leftMissing || rightMissing) {
+          if (leftMissing && rightMissing) return 0;
+          return leftMissing ? 1 : -1;
+        }
+
+        const leftNumber = Number(leftValue);
+        const rightNumber = Number(rightValue);
+        const bothNumbers = !Number.isNaN(leftNumber) && !Number.isNaN(rightNumber);
+        const comparison = bothNumbers
+          ? leftNumber - rightNumber
+          : String(leftValue).localeCompare(String(rightValue), undefined, { sensitivity: 'base' });
+        return historySortDirection === 'asc' ? comparison : -comparison;
+      });
+      const body = $('historyBody');
+      body.innerHTML = '';
+
+      $('historyEmpty').style.display = runs.length ? 'none' : 'block';
+
+      document.querySelectorAll('table.history th[data-sort]').forEach(header => {
+        const active = header.dataset.sort === historySortKey;
+        header.classList.toggle('sort-active', active);
+        const label = header.textContent.replace(/\s+[\^v]$/, '');
+        header.textContent = active
+          ? `${label} ${historySortDirection === 'asc' ? '^' : 'v'}`
+          : label;
+      });
+
+      runs.forEach(r => {
+        const tr = document.createElement('tr');
+        const when = r.timestamp ? r.timestamp.replace('T', ' ').slice(0, 19) : '--';
+        const cells = [
+          [when, ''],
+          [r.build || '--', ''],
+          [r.model || '--', ''],
+          [r.draftModel || '--', ''],
+          [r.contextSize ?? '--', 'num'],
+          [r.gpuLayers ?? '--', 'num'],
+          [r.specType || '--', ''],
+          [r.specDraftNMax ?? '--', 'num'],
+          [r.reasoningEffort || '--', ''],
+          [(r.repeatRuns ?? r.totalRuns ?? r.runIndex ?? '--'), 'num'],
+          [fmt(r.tps), 'num tps-cell'],
+          [r.tokens ?? '--', 'num'],
+          [fmt(r.promptTps), 'num'],
+          [r.acceptancePct == null ? '--' : fmt(r.acceptancePct), 'num'],
+          [fmt(r.ttftSec), 'num'],
+          [fmt(r.peakPowerW), 'num'],
+          [r.peakTempC ?? '--', 'num']
+        ];
+        cells.forEach(([text, cls]) => {
+          const td = document.createElement('td');
+          td.textContent = text;
+          if (cls) td.className = cls;
+          tr.appendChild(td);
+        });
+        body.appendChild(tr);
+      });
+  }
+
+  function fmt(v) {
+    return (v == null || v === '') ? '--' : Number(v).toFixed(2);
+  }
+
+  async function copyOutput() {
+    const text = $('output').textContent.trim();
+    if (!text) {
+      $('runMsg').textContent = 'Output is empty.';
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      $('runMsg').textContent = 'Output copied to clipboard.';
+    } catch (e) {
+      $('runMsg').textContent = 'Unable to copy output.';
+    }
+  }
+
+  async function downloadHistoryFile() {
+    try {
+      const data = await (await fetch('/api/history')).json();
+      const runs = data.runs || [];
+      const body = JSON.stringify(runs, null, 2);
+      const blob = new Blob([body], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'benchmark-history.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      $('historyMsg').textContent = `Downloaded ${runs.length} saved run(s).`;
+    } catch (e) {
+      $('historyMsg').textContent = 'Failed to download history file.';
+    }
+  }
+
+  async function clearHistory() {
+    if (!confirm('Delete all saved benchmark runs?')) return;
+    try {
+      const data = await (await fetch('/api/history/clear', { method: 'POST' })).json();
+      $('historyMsg').textContent = data.message || '';
+      loadHistory();
+    } catch (e) {
+      $('historyMsg').textContent = 'Failed to clear history.';
+    }
+  }
+
+  // ---------- init ----------
+
+  $('promptInput').value = $('promptInput').value.trim();
+  fetchState();
+  scanBuilds();
+  scanModels();
+  loadTemplates();
+  loadHistory();
+  setInterval(fetchState, 500);
+</script>
+</body>
+</html>
